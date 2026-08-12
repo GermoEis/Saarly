@@ -3,8 +3,8 @@
 -- Põhjus: auth.users ridu ei looda fiktiivsete paroolidega migratsioonis.
 --
 -- insert into public.profiles(id,display_name) values
--- ('00000000-0000-0000-0000-000000000001','Ema'),
--- ('00000000-0000-0000-0000-000000000002','Helina'),
--- ('00000000-0000-0000-0000-000000000003','Germo'),
--- ('00000000-0000-0000-0000-000000000004','Mari');
+-- ('00000000-0000-0000-0000-000000000001','Kasutaja A'),
+-- ('00000000-0000-0000-0000-000000000002','Kasutaja B'),
+-- ('00000000-0000-0000-0000-000000000003','Kasutaja C'),
+-- ('00000000-0000-0000-0000-000000000004','Kasutaja D');
 -- Seejärel kasuta README jaotist „Supabase'i kasutuselevõtt“.

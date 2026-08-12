@@ -160,7 +160,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
       return () => { authListener.subscription.unsubscribe(); cloudUnsubscribe.current?.(); cloudUnsubscribe.current = null; };
     }
     loadDemo().then((saved) => {
-      if (saved?.version === 2) setState({ ...saved, settlements: saved.settlements ?? [], items: saved.items.map((item) => item.status === 'assigned' ? { ...item, status: 'accepted' } : item), assignments: saved.assignments.map((assignment) => assignment.status === 'pending' ? { ...assignment, status: 'accepted' } : assignment) });
+      if (saved?.version === 3) setState({ ...saved, settlements: saved.settlements ?? [], items: saved.items.map((item) => item.status === 'assigned' ? { ...item, status: 'accepted' } : item), assignments: saved.assignments.map((assignment) => assignment.status === 'pending' ? { ...assignment, status: 'accepted' } : assignment) });
       setReady(true);
     });
     if (Platform.OS === 'web' && typeof BroadcastChannel !== 'undefined') {

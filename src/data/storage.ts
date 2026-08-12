@@ -2,8 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { DemoState } from '@/types/domain';
 
-export const STORAGE_KEY = 'saarly-demo-v2';
-export const USER_KEY = 'saarly-demo-user-v2';
+export const STORAGE_KEY = 'saarly-demo-v3';
+export const USER_KEY = 'saarly-demo-user-v3';
 
 export async function loadDemo(): Promise<DemoState | null> {
   try {

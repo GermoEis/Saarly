@@ -28,7 +28,7 @@ npm install
 npx expo start --web
 ```
 
-Supabase'i võtmeid pole demo jaoks vaja. Ava terminalis näidatud veebiaadress ja sisesta oma nimi koos demokoodiga **DEMO2026** või vali kiireks testiks **Ema**, **Helina**, **Germo** või **Mari**. Demo salvestub brauseri `localStorage`-isse. Sama brauseri kaks akent sünkroonivad muudatusi `BroadcastChannel` API kaudu.
+Supabase'i võtmeid pole demo jaoks vaja. Ava terminalis näidatud veebiaadress ja vali kiireks testiks **Kasutaja A**, **Kasutaja B**, **Kasutaja C** või **Kasutaja D**. Demo salvestub brauseri `localStorage`-isse. Sama brauseri kaks akent sünkroonivad muudatusi `BroadcastChannel` API kaudu.
 
 Kui vana demoseis põhjustab segadust, vali kasutaja seadetest **Taasta näidisandmed**.
 
@@ -38,13 +38,13 @@ Pärisrežiimis saab uus kasutaja luua konto nime, e-posti ja vähemalt 8-märgi
 
 ## Mida demos proovida
 
-1. Sisene kasutajana **Ema**, ava „Kaubad 12. augustiks“, lisa kategooria ja toode ning määra kaup kasutajale.
-2. Ava seaded ja vaheta **Helina** rolli. „Minule määratud“ all on määratud tooted kohe aktiivsed: eraldi vastuvõtmist pole vaja ning saad vajutada kohe **Ostetud**. Kui sa ei saa praegu midagi võtta, vabastab vastav nupp kõik ostmata määrangud.
+1. Sisene kasutajana **Kasutaja A**, ava „Kaubad 12. augustiks“, lisa kategooria ja toode ning määra kaup kasutajale.
+2. Ava seaded ja vaheta **Kasutaja B** rolli. „Minule määratud“ all on määratud tooted kohe aktiivsed: eraldi vastuvõtmist pole vaja ning saad vajutada kohe **Ostetud**. Kui sa ei saa praegu midagi võtta, vabastab vastav nupp kõik ostmata määrangud.
 3. Ava „Jooksev list“. Iga grupiliige saab nupuga **Lisa asi** lisada kauba otse sinna ilma eraldi ostunimekirja loomata või vajutada vaba toote juures **Võtan endale**.
 4. Märgi toode **Ostetud** või **Poes ei olnud**. Kui kõik sinu määratud asjad on ostetud, ilmub saadetise juurde nupp **Laevale viidud**.
-5. Laevainfo on nimekirja ülaosas. Kui kõik sinu kaubad on ostetud, määra laev ja märgi saadetis laevale viiduks. Ema saab teavituse alles siis, kui toodet ei leitud või saadetis märgiti laevale viiduks; üksiku toote ostetuks märkimine ega laevainfo kavandi salvestamine teadet ei saada.
+5. Laevainfo on nimekirja ülaosas. Kui kõik sinu kaubad on ostetud, määra laev ja märgi saadetis laevale viiduks. Kasutaja A saab teavituse alles siis, kui toodet ei leitud või saadetis märgiti laevale viiduks; üksiku toote ostetuks märkimine ega laevainfo kavandi salvestamine teadet ei saada.
 6. Ava kaks brauseriakent eri kasutajatega ja kontrolli reaalajas sünkroonimist.
-7. Sisene **Germo** rollis ja ava kasutajate seaded. Muuda grupi nime, sisesta kutsutava nimi ning jaga ühekordset kutset. Kutsutu lisatakse liikmeks alles siis, kui ta logib oma kontoga sisse ja lunastab kutsekoodi. Germo saab liikme ka eemaldada; tema pooleliolevad tooted liiguvad tagasi „Jooksvasse listi“.
+7. Sisene **Kasutaja C** rollis ja ava kasutajate seaded. Muuda grupi nime, sisesta kutsutava nimi ning jaga ühekordset kutset. Kutsutu lisatakse liikmeks alles siis, kui ta logib oma kontoga sisse ja lunastab kutsekoodi. Kasutaja C saab liikme ka eemaldada; tema pooleliolevad tooted liiguvad tagasi „Jooksvasse listi“.
 8. Ava nimekirjade avalehelt **Arveldused**. Lisa summa teisele grupiliikmele ja soovi korral selgitus. Võlgnik saab märkida summa makstuks ning raha saaja kinnitab laekumise; raha saaja võib avatud arvelduse ka kohe ise nupuga **Märgi tasutuks** lõpetada. Kuupäeva ei sisestata. Arveldust näevad ainult selle kaks osapoolt, mitte teised grupiliikmed ega osapooleks mitteolev administraator.
 
 Toote kaardile vajutamine avab detaili koos foto, muutmise, määramise, kategooriasse liigutamise ja tegevusajalooga. Foto saab valida või teha juba uue toote vormis ning iga foto salvestatakse püsivalt oma toote külge. Kõik grupiliikmed saavad kategooriaid ümber nimetada ning üles/alla liigutada. Kustutamine ja arhiveerimine küsivad kinnitust. Administraatori eriõigus on piiratud grupi nime, kutsete ja liikmete haldamisega.

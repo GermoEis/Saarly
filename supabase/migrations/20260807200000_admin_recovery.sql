@@ -1,4 +1,4 @@
--- Nime + ühise turvakoodi MVP-s saab Germo administraatoriõiguse uues seadmes taastada.
+-- Nime + ühise turvakoodi pärand-MVP-s saab määratud administraator õiguse uues seadmes taastada.
 -- Päris kontode lisamisel asenda see eraldi admini autentimisega.
 create or replace function public.redeem_group_code(supplied_code text, supplied_name text) returns uuid
 language plpgsql security definer set search_path = '' as $$

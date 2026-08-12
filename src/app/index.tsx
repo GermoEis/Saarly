@@ -111,7 +111,7 @@ export default function LoginScreen() {
           <View style={styles.choiceBlock}>
             <Text style={styles.choiceTitle}>Liitu olemasoleva grupiga</Text>
             <Text style={styles.copy}>Sisesta administraatorilt saadud kutsekood. Sama konto võib kuuluda mitmesse gruppi.</Text>
-          <Field label="Sinu nimi" value={name || app.authDisplayName || ''} onChangeText={setName} placeholder="Näiteks Helina" autoCapitalize="words" />
+          <Field label="Sinu nimi" value={name || app.authDisplayName || ''} onChangeText={setName} placeholder="Sisesta oma nimi" autoCapitalize="words" />
             <Field label="Kutsekood" value={securityCode} onChangeText={setSecurityCode} placeholder="Näiteks SAARLY-ABCD-1234" autoCapitalize="characters" secureTextEntry />
             <Button label={working ? 'Liitun…' : 'Liitu grupiga'} disabled={working || !name.trim() || !securityCode.trim()} onPress={() => void join()} />
           </View>
