@@ -1,0 +1,21 @@
+{
+  "name": "Saarly",
+  "short_name": "Saarly",
+  "description": "Ühised ostunimekirjad ja kaupade laevale toimetamine.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#176B4D",
+  "theme_color": "#176B4D",
+  "icons": [
+    {
+      "src": "/saarly-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/saarly-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

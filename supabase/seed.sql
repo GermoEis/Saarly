@@ -1,0 +1,10 @@
+-- Demoandmed luuakse rakenduses ilma Supabase'ita. See fail lisab arenduskeskkonda grupi
+-- pärast seda, kui neli kasutajat on Authis loodud. Asenda UUID-d oma auth.users väärtustega.
+-- Põhjus: auth.users ridu ei looda fiktiivsete paroolidega migratsioonis.
+--
+-- insert into public.profiles(id,display_name) values
+-- ('00000000-0000-0000-0000-000000000001','Ema'),
+-- ('00000000-0000-0000-0000-000000000002','Helina'),
+-- ('00000000-0000-0000-0000-000000000003','Germo'),
+-- ('00000000-0000-0000-0000-000000000004','Mari');
+-- Seejärel kasuta README jaotist „Supabase'i kasutuselevõtt“.

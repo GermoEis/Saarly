@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Saarly",
+    "slug": "saarly",
+    "version": "1.0.0",
+    "orientation": "default",
+    "scheme": "saarly",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/saarly-ship-icon.png",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ee.saarly.app"
+    },
+    "android": {
+      "package": "ee.saarly.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#176B4D",
+        "foregroundImage": "./assets/images/saarly-ship-android.png"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/saarly-ship-favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Saarly vajab ligipääsu fotode lisamiseks toodetele ja märkmetele."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#176B4D"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#176B4D",
+          "image": "./assets/images/saarly-ship-splash.png",
+          "imageWidth": 160
+        }
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
