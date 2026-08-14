@@ -5,8 +5,21 @@ import { canManageShoppingContent, deliveryCompletedNotification, deliveryNotifi
 import { selectActiveGroupId } from '../src/data/groups';
 import { GroupMembership } from '../src/types/domain';
 import { cancelSettlementInDemo, confirmSettlementPaidInDemo, createSettlementInDemo, markSettlementPaidInDemo, settlementTotalsByParty, settlementVisibleTo } from '../src/data/settlements';
+import { sortItems } from '../src/data/itemSorting';
 
 describe('Saarly põhivood', () => {
+  it('tooteid saab sortida nime ja lisamisaja järgi', () => {
+    const items = createDemoState().items.slice(0, 3).map((item, index) => ({
+      ...item,
+      id: `sort-${index}`,
+      name: ['Õun', 'Banaan', 'Aprikoos'][index],
+      created_at: [`2026-08-12T10:00:00Z`, `2026-08-14T10:00:00Z`, `2026-08-13T10:00:00Z`][index],
+    }));
+    expect(sortItems(items, 'az').map((item) => item.name)).toEqual(['Aprikoos', 'Banaan', 'Õun']);
+    expect(sortItems(items, 'za').map((item) => item.name)).toEqual(['Õun', 'Banaan', 'Aprikoos']);
+    expect(sortItems(items, 'newest').map((item) => item.name)).toEqual(['Banaan', 'Aprikoos', 'Õun']);
+    expect(sortItems(items, 'oldest').map((item) => item.name)).toEqual(['Õun', 'Aprikoos', 'Banaan']);
+  });
   it('kaks kasutajat ei saa sama ujuvat toodet endale võtta', () => {
     const first = claimItem(createDemoState(), 'beer', 'user-b');
     const second = claimItem(first.state, 'beer', 'user-c');

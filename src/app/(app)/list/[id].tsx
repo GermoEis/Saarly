@@ -3,9 +3,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ItemCard } from '@/components/ItemCard';
 import { PhotoField, SelectedPhoto } from '@/components/PhotoField';
+import { ItemSortControl } from '@/components/ItemSortControl';
 import { Button, Card, Empty, Field, Page, Sheet, StatusBadge } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
 import { assignedItemsForUser, profileName } from '@/data/business';
+import { ItemSortOrder, sortItems } from '@/data/itemSorting';
 import { ThemeColors } from '@/theme';
 
 export default function ListDetailScreen() {
@@ -19,6 +21,7 @@ export default function ListDetailScreen() {
   const [categoryEdit, setCategoryEdit] = useState<string | null>(null); const [categoryName, setCategoryName] = useState('');
   const [itemName, setItemName] = useState(''); const [quantity, setQuantity] = useState('1'); const [unit, setUnit] = useState(''); const [note, setNote] = useState(''); const [categoryId, setCategoryId] = useState(categories[0]?.id ?? ''); const [assignee, setAssignee] = useState<string | undefined>();
   const [itemPhoto, setItemPhoto] = useState<SelectedPhoto | null>(null); const [savingItem, setSavingItem] = useState(false);
+  const [sortOrder, setSortOrder] = useState<ItemSortOrder>('newest');
   const myDelivery = app.state.deliveries.find((value) => value.list_id === id && value.courier_id === app.currentUser?.id);
   const existingDelivery = myDelivery ?? app.state.deliveries.find((value) => value.list_id === id);
   const [ship, setShip] = useState(existingDelivery?.ship_name ?? 'Baltic Queen'); const [date, setDate] = useState(existingDelivery?.departure_date ?? new Date().toISOString().slice(0, 10)); const [time, setTime] = useState(existingDelivery?.departure_time ?? ''); const [port, setPort] = useState(existingDelivery?.port ?? 'Tallinn'); const [place, setPlace] = useState(existingDelivery?.handover_place ?? 'D-terminal'); const [deliveryNote, setDeliveryNote] = useState(existingDelivery?.note ?? '');
@@ -43,8 +46,9 @@ export default function ListDetailScreen() {
     <Card style={styles.deliveryCard}><View style={styles.deliveryHead}><Text style={styles.shipIcon}>⚓</Text><View style={{ flex: 1 }}><Text style={styles.deliveryTitle}>Laev ja üleandmine</Text><Text style={styles.muted}>{existingDelivery ? `${profileName(app.state, existingDelivery.courier_id)} · ${existingDelivery.ship_name} · ${existingDelivery.departure_date.split('-').reverse().join('.')}${existingDelivery.departure_time ? ` kell ${existingDelivery.departure_time}` : ''}` : canSetDelivery ? 'Palun määra, mis laeva peale kauba panid.' : app.isCreator ? 'Laevainfo ilmub siia, kui oled selle määranud.' : 'Laeva saad määrata, kui sulle on sellest nimekirjast toode määratud.'}</Text></View>{existingDelivery?.status === 'delivered' ? <StatusBadge status="delivered" /> : null}</View>{existingDelivery ? <Text style={styles.deliveryPlace}>{existingDelivery.port} · üleandmine: {existingDelivery.handover_place}{existingDelivery.note ? ` · ${existingDelivery.note}` : ''}</Text> : null}{canSetDelivery ? <><Button label={myDelivery ? 'Muuda laevainfot' : 'Määra laev'} variant="secondary" onPress={() => setDeliveryOpen(true)} />{allMinePurchased && myDelivery && myDelivery.status !== 'delivered' ? <Button label="Laevale viidud" icon="⚓" onPress={() => saveDelivery(true)} /> : null}</> : null}</Card>
     <Card style={styles.summary}><View><Text style={styles.summaryValue}>{done}/{allItems.length}</Text><Text style={styles.summaryLabel}>ostetud või viidud</Text></View><View style={styles.divider} /><View><Text style={styles.summaryValue}>{allItems.filter((value) => !value.assigned_to && value.status === 'unassigned').length}</Text><Text style={styles.summaryLabel}>jooksvas listis</Text></View></Card>
     {app.isCreator ? <View style={styles.toolbar}><Button label="Lisa toode" icon="+" onPress={() => { setCategoryId(categories[0]?.id ?? ''); setAddItemOpen(true); }} /><Button label="Lisa kategooria" icon="+" variant="secondary" onPress={() => setAddCategoryOpen(true)} /></View> : null}
+    {allItems.length ? <ItemSortControl value={sortOrder} onChange={setSortOrder} /> : null}
     {categories.map((category) => {
-      const items = allItems.filter((value) => value.category_id === category.id);
+      const items = sortItems(allItems.filter((value) => value.category_id === category.id), sortOrder);
       return <View key={category.id} style={{ gap: 10 }}><View style={styles.categoryHead}><Pressable style={styles.categoryToggle} onPress={() => app.toggleCategory(category.id)}><Text style={styles.categoryArrow}>{category.collapsed ? '›' : '⌄'}</Text><Text style={styles.categoryTitle}>{category.name}</Text><Text style={styles.categoryCount}>{items.length}</Text></Pressable>{app.isCreator ? <Button label="Muuda" variant="ghost" onPress={() => { setCategoryEdit(category.id); setCategoryName(category.name); }} /> : null}</View>{!category.collapsed ? items.length ? <View style={styles.itemsGrid}>{items.map((item) => <View key={item.id} style={styles.itemWrap}><ItemCard item={item} compact /></View>)}</View> : <Card><Text style={styles.muted}>Selles kategoorias pole veel tooteid.</Text></Card> : null}</View>;
     })}
     {!categories.length ? <Empty icon="☷" title="Kategooriaid pole" body="Alusta kategooria lisamisest." /> : null}
