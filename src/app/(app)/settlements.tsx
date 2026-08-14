@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, Empty, Field, Page, Sheet } from '@/components/ui';
 import { useApp } from '@/context/AppContext';
-import { formatEuros, settlementVisibleTo } from '@/data/settlements';
+import { formatEuros, settlementTotalsByParty, settlementVisibleTo } from '@/data/settlements';
 import { ThemeColors } from '@/theme';
 import { Settlement, SETTLEMENT_STATUS_META } from '@/types/domain';
 
@@ -32,6 +32,9 @@ export default function SettlementsScreen() {
   const owedByMe = settlements.filter((value) => value.debtor_id === userId && ['open', 'marked_paid'].includes(value.status));
   const owedToMe = settlements.filter((value) => value.creditor_id === userId && ['open', 'marked_paid'].includes(value.status));
   const history = settlements.filter((value) => ['paid', 'cancelled'].includes(value.status));
+  const partyTotals = useMemo(() => settlementTotalsByParty(settlements, userId), [settlements, userId]);
+  const iOweTotal = partyTotals.iOwe.reduce((sum, value) => sum + value.amount, 0);
+  const owedToMeTotal = partyTotals.owedToMe.reduce((sum, value) => sum + value.amount, 0);
   const members = app.state.groupMembers
     .filter((member) => member.profile_id !== userId)
     .map((member) => app.state.profiles.find((profile) => profile.id === member.profile_id))
@@ -98,8 +101,29 @@ export default function SettlementsScreen() {
     {items.length ? items.map(settlementCard) : <Text style={styles.emptyLine}>{emptyText}</Text>}
   </View>;
 
+  const summaryRow = (label: string, profileId: string, total: number, count: number) => {
+    const name = app.state.profiles.find((profile) => profile.id === profileId)?.display_name ?? 'Kasutaja';
+    return <View key={`${label}-${profileId}`} style={styles.summaryRow}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.summaryParty}>{label} · {name}</Text>
+        <Text style={styles.summaryCount}>{count} {count === 1 ? 'arveldus' : 'arveldust'}</Text>
+      </View>
+      <Text style={styles.summaryRowAmount}>{formatEuros(total)}</Text>
+    </View>;
+  };
+
   return <Page title="Arveldused" subtitle="Siin saad hoida grupiliikmete vahelised summad privaatselt. Kirjet näevad ainult selle kaks osapoolt." action={<Button label="Lisa arveldus" icon="+" disabled={!members.length} onPress={() => setAdding(true)} />}>
     {settlements.length ? <>
+      <Card style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>Kokkuvõte</Text>
+        <View style={styles.summaryTotals}>
+          <View style={styles.summaryStat}><Text style={styles.summaryLabel}>Kokku tasuda</Text><Text style={styles.summaryAmount}>{formatEuros(iOweTotal)}</Text></View>
+          <View style={styles.summaryStat}><Text style={styles.summaryLabel}>Mulle kokku</Text><Text style={styles.summaryAmount}>{formatEuros(owedToMeTotal)}</Text></View>
+        </View>
+        {partyTotals.iOwe.map((value) => summaryRow('Mina pean maksma', value.profileId, value.amount, value.count))}
+        {partyTotals.owedToMe.map((value) => summaryRow('Mulle võlgu', value.profileId, value.amount, value.count))}
+        {!partyTotals.iOwe.length && !partyTotals.owedToMe.length ? <Text style={styles.emptyLine}>Aktiivseid arveldusi pole.</Text> : null}
+      </Card>
       {section('Mina pean maksma', owedByMe, 'Sul pole maksmata arveldusi.')}
       {section('Mulle ollakse võlgu', owedToMe, 'Sulle pole maksmata arveldusi.')}
       {section('Tasutud ja tühistatud', history, 'Varasemaid arveldusi pole.')}
@@ -116,6 +140,7 @@ export default function SettlementsScreen() {
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  summaryCard: { gap: 13 }, summaryTitle: { color: colors.ink, fontSize: 22, fontWeight: '900' }, summaryTotals: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, summaryStat: { flexGrow: 1, flexBasis: 150, minWidth: 0, borderRadius: 14, padding: 14, backgroundColor: colors.subtle }, summaryLabel: { color: colors.muted, fontSize: 14, fontWeight: '700' }, summaryAmount: { color: colors.ink, fontSize: 24, fontWeight: '900', marginTop: 4 }, summaryRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }, summaryParty: { color: colors.ink, fontSize: 16, lineHeight: 22, fontWeight: '800' }, summaryCount: { color: colors.muted, fontSize: 14, marginTop: 2 }, summaryRowAmount: { color: colors.ink, fontSize: 18, fontWeight: '900' },
   section: { gap: 12 }, sectionTitle: { color: colors.ink, fontSize: 21, fontWeight: '900', marginTop: 4 }, emptyLine: { color: colors.muted, fontSize: 16, lineHeight: 23, paddingVertical: 4 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }, amount: { color: colors.ink, fontSize: 26, fontWeight: '900' }, party: { color: colors.muted, fontSize: 15, lineHeight: 21, marginTop: 3 }, description: { color: colors.ink, fontSize: 17, lineHeight: 24 },
   badge: { backgroundColor: colors.dangerSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 7 }, badgePaid: { backgroundColor: colors.primarySoft }, badgeWaiting: { backgroundColor: colors.accentSoft }, badgeCancelled: { backgroundColor: colors.subtle }, badgeText: { color: colors.ink, fontSize: 13, fontWeight: '800' },

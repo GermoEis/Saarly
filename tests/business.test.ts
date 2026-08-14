@@ -4,7 +4,7 @@ import { categoriesForNewList, claimItem, declineItem, releaseAllItems, removeBu
 import { canManageShoppingContent, deliveryCompletedNotification, deliveryNotification, visibleListsForUser } from '../src/data/access';
 import { selectActiveGroupId } from '../src/data/groups';
 import { GroupMembership } from '../src/types/domain';
-import { cancelSettlementInDemo, confirmSettlementPaidInDemo, createSettlementInDemo, markSettlementPaidInDemo, settlementVisibleTo } from '../src/data/settlements';
+import { cancelSettlementInDemo, confirmSettlementPaidInDemo, createSettlementInDemo, markSettlementPaidInDemo, settlementTotalsByParty, settlementVisibleTo } from '../src/data/settlements';
 
 describe('Saarly põhivood', () => {
   it('kaks kasutajat ei saa sama ujuvat toodet endale võtta', () => {
@@ -105,6 +105,11 @@ describe('Saarly põhivood', () => {
     expect(settlementVisibleTo(settlement, 'user-c')).toBe(true);
     expect(settlementVisibleTo(settlement, 'user-b')).toBe(true);
     expect(settlementVisibleTo(settlement, 'user-a')).toBe(false);
+  });
+  it('mitu sama inimese arveldust liidetakse kokkuvõttes kokku', () => {
+    const state = createSettlementInDemo(createDemoState(), 'user-c', { debtor_id: 'user-b', amount: 5.5, description: 'Teine ost' });
+    expect(settlementTotalsByParty(state.settlements, 'user-b').iOwe).toEqual([{ profileId: 'user-c', amount: 30, count: 2 }]);
+    expect(settlementTotalsByParty(state.settlements, 'user-c').owedToMe).toEqual([{ profileId: 'user-b', amount: 30, count: 2 }]);
   });
   it('arvelduse tasumine vajab võlgniku märget ja raha saaja kinnitust', () => {
     const created = createSettlementInDemo(createDemoState(), 'user-c', { debtor_id: 'user-d', amount: 18.75, description: 'Poekaubad' });

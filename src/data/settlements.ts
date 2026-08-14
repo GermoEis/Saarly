@@ -11,6 +11,30 @@ export function settlementVisibleTo(settlement: Settlement, userId: string) {
   return settlement.creditor_id === userId || settlement.debtor_id === userId;
 }
 
+export interface SettlementPartyTotal {
+  profileId: string;
+  amount: number;
+  count: number;
+}
+
+export function settlementTotalsByParty(settlements: Settlement[], userId: string) {
+  const iOwe = new Map<string, SettlementPartyTotal>();
+  const owedToMe = new Map<string, SettlementPartyTotal>();
+  const add = (target: Map<string, SettlementPartyTotal>, profileId: string, amount: number) => {
+    const current = target.get(profileId);
+    target.set(profileId, { profileId, amount: (current?.amount ?? 0) + Number(amount), count: (current?.count ?? 0) + 1 });
+  };
+
+  settlements.forEach((settlement) => {
+    if (!['open', 'marked_paid'].includes(settlement.status)) return;
+    if (settlement.debtor_id === userId) add(iOwe, settlement.creditor_id, settlement.amount);
+    if (settlement.creditor_id === userId) add(owedToMe, settlement.debtor_id, settlement.amount);
+  });
+
+  const sorted = (values: Map<string, SettlementPartyTotal>) => [...values.values()].sort((a, b) => b.amount - a.amount || a.profileId.localeCompare(b.profileId));
+  return { iOwe: sorted(iOwe), owedToMe: sorted(owedToMe) };
+}
+
 function addNotification(state: DemoState, input: Omit<Notification, 'id' | 'created_at' | 'updated_at'>) {
   const at = now();
   return [{ ...input, id: uid('notification'), created_at: at, updated_at: at }, ...state.notifications];
