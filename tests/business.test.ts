@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoState } from '../src/data/demoSeed';
-import { assignedItemsForUser, categoriesForNewList, claimItem, declineItem, deleteListPreservingFloating, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '../src/data/business';
+import { archiveListIfComplete, assignedItemsForUser, categoriesForNewList, claimItem, declineItem, deleteListPreservingFloating, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '../src/data/business';
 import { canManageShoppingContent, deliveryCompletedNotification, deliveryNotification, visibleListsForUser } from '../src/data/access';
 import { selectActiveGroupId } from '../src/data/groups';
 import { GroupMembership } from '../src/types/domain';
@@ -24,6 +24,7 @@ describe('Saarly põhivood', () => {
     const after = setItemOutcome(claimed, 'beer', 'user-b', 'unavailable', 'Selveris otsas');
     expect(after.activity.length).toBe(before + 1); expect(after.attempts.at(-1)?.note).toBe('Selveris otsas');
     expect(after.items.find((item) => item.id === 'beer')?.searched_before).toBe(true);
+    expect(after.lists.find((list) => list.id === after.items.find((item) => item.id === 'beer')?.list_id)?.is_quick_list).toBe(true);
   });
   it('ostetud toode jääb õige kasutajaga seotuks', () => {
     const before = createDemoState(); const notificationCount = before.notifications.length;
@@ -91,7 +92,26 @@ describe('Saarly põhivood', () => {
     expect(bread).toMatchObject({ assigned_to: undefined, status: 'unassigned', searched_before: true });
     expect(quickList?.is_quick_list).toBe(true);
     expect(deleted.attempts.some((attempt) => attempt.item_id === 'bread' && attempt.note === 'Poes ei olnud')).toBe(true);
-    expect(deleted.activity.some((entry) => entry.item_id === 'bread' && entry.action.includes('Säilitas toote'))).toBe(true);
+    expect(deleted.activity.some((entry) => entry.item_id === 'bread' && entry.action === 'Ei leidnud toodet poest')).toBe(true);
+  });
+  it('nimekiri arhiveeritakse automaatselt, kui kõik selle tooted on lõpetatud', () => {
+    const state = createDemoState();
+    state.items = state.items.filter((item) => item.list_id !== 'aug12' || item.id === 'bread');
+    const completed = setItemOutcome(state, 'bread', 'user-b', 'purchased');
+    expect(completed.lists.find((list) => list.id === 'aug12')?.archived_at).toBeTruthy();
+  });
+  it('tühjaks jäänud nimekiri arhiveeritakse pärast leidmata toote jooksvasse listi viimist', () => {
+    const state = createDemoState();
+    state.items = state.items.filter((item) => item.list_id !== 'aug12' || item.id === 'bread');
+    const completed = setItemOutcome(state, 'bread', 'user-b', 'unavailable', 'Ei leidnud');
+    const item = completed.items.find((value) => value.id === 'bread');
+    expect(completed.lists.find((list) => list.id === 'aug12')?.archived_at).toBeTruthy();
+    expect(completed.lists.find((list) => list.id === item?.list_id)?.is_quick_list).toBe(true);
+  });
+  it('jooksvat listi ennast ei arhiveerita automaatselt', () => {
+    const state = createDemoState();
+    const quick = state.lists.find((list) => list.is_quick_list);
+    expect(quick ? archiveListIfComplete(state, quick.id) : state).toEqual(state);
   });
   it('kõigi ostetud kaupade laevale viimine muudab tooted ja teavitab koostajat laevainfoga', () => {
     const purchased = setItemOutcome(createDemoState(), 'bread', 'user-b', 'purchased');

@@ -15,6 +15,54 @@ function notify(state: DemoState, notification: Omit<Notification, 'id' | 'creat
   return { ...state, notifications: [{ ...notification, id: uid(), group_id: 'family', created_at: at, updated_at: at }, ...state.notifications] };
 }
 
+function ensureQuickList(state: DemoState, groupId: string, actorId: string, at: string) {
+  const existingList = state.lists.find((value) => value.group_id === groupId && value.is_quick_list);
+  const listId = existingList?.id ?? `${uid()}-quick-list`;
+  const existingCategory = state.categories.find((value) => value.list_id === listId);
+  const categoryId = existingCategory?.id ?? `${uid()}-quick-category`;
+  const list: ShoppingList = existingList ?? {
+    id: listId,
+    group_id: groupId,
+    created_by: actorId,
+    name: 'Jooksev list',
+    description: 'Ilma eraldi ostunimekirjata lisatud kaubad',
+    is_quick_list: true,
+    created_at: at,
+    updated_at: at,
+  };
+  const category: Category = existingCategory ?? {
+    id: categoryId,
+    list_id: listId,
+    name: 'Üldine',
+    sort_order: 0,
+    created_at: at,
+    updated_at: at,
+  };
+  return {
+    state: {
+      ...state,
+      lists: existingList ? state.lists : [...state.lists, list],
+      categories: existingCategory ? state.categories : [...state.categories, category],
+    },
+    listId,
+    categoryId,
+  };
+}
+
+export function archiveListIfComplete(state: DemoState, listId: string): DemoState {
+  const list = state.lists.find((value) => value.id === listId);
+  if (!list || list.is_quick_list || list.archived_at) return state;
+  const hasUnfinishedItems = state.items.some((item) =>
+    item.list_id === listId && !['purchased', 'delivered', 'cancelled'].includes(item.status),
+  );
+  if (hasUnfinishedItems) return state;
+  const at = timestamp();
+  return {
+    ...state,
+    lists: state.lists.map((value) => value.id === listId ? { ...value, archived_at: at, updated_at: at } : value),
+  };
+}
+
 export function claimItem(state: DemoState, itemId: string, userId: string): { state: DemoState; ok: boolean; message?: string } {
   const item = state.items.find((value) => value.id === itemId);
   if (!item || item.assigned_to || (item.status !== 'unassigned' && item.status !== 'unavailable')) {
@@ -38,9 +86,12 @@ export function declineItem(state: DemoState, itemId: string, userId: string): D
   const item = state.items.find((value) => value.id === itemId);
   if (!item || item.assigned_to !== userId) return state;
   const at = timestamp();
-  let next = { ...state, items: state.items.map((value) => value.id === itemId ? { ...value, assigned_to: undefined, status: 'unassigned' as const, updated_at: at } : value), assignments: state.assignments.map((value) => value.item_id === itemId && value.user_id === userId ? { ...value, status: 'declined' as const, updated_at: at } : value) };
+  const originalList = state.lists.find((value) => value.id === item.list_id);
+  const quick = originalList?.is_quick_list ? null : ensureQuickList(state, originalList?.group_id ?? 'family', userId, at);
+  const prepared = quick?.state ?? state;
+  let next = { ...prepared, items: prepared.items.map((value) => value.id === itemId ? { ...value, list_id: quick?.listId ?? value.list_id, category_id: quick?.categoryId ?? value.category_id, assigned_to: undefined, status: 'unassigned' as const, updated_at: at } : value), assignments: prepared.assignments.map((value) => value.item_id === itemId && value.user_id === userId ? { ...value, status: 'declined' as const, updated_at: at } : value) };
   next = record(next, itemId, userId, 'Keeldus tootest', item.status, 'unassigned');
-  return next;
+  return archiveListIfComplete(next, item.list_id);
 }
 
 export function setItemOutcome(state: DemoState, itemId: string, userId: string, outcome: 'purchased' | 'unavailable' | 'delivered', note?: string): DemoState {
@@ -49,12 +100,17 @@ export function setItemOutcome(state: DemoState, itemId: string, userId: string,
   const at = timestamp();
   const assigned_to = outcome === 'unavailable' ? undefined : userId;
   const status: ItemStatus = outcome === 'unavailable' ? 'unassigned' : outcome;
-  let next: DemoState = { ...state, items: state.items.map((value) => value.id === itemId ? { ...value, assigned_to, status, searched_before: value.searched_before || outcome === 'unavailable', updated_at: at } : value) };
+  const originalList = state.lists.find((value) => value.id === item.list_id);
+  const quick = outcome === 'unavailable' && !originalList?.is_quick_list
+    ? ensureQuickList(state, originalList?.group_id ?? 'family', userId, at)
+    : null;
+  const prepared = quick?.state ?? state;
+  let next: DemoState = { ...prepared, items: prepared.items.map((value) => value.id === itemId ? { ...value, list_id: quick?.listId ?? value.list_id, category_id: quick?.categoryId ?? value.category_id, assigned_to, status, searched_before: value.searched_before || outcome === 'unavailable', updated_at: at } : value) };
   if (outcome === 'unavailable') next = { ...next, attempts: [...next.attempts, { id: uid(), item_id: itemId, user_id: userId, outcome: 'not_found', note, created_at: at, updated_at: at }] };
   const label = outcome === 'purchased' ? 'Märkis toote ostetuks' : outcome === 'delivered' ? 'Märkis toote laevale viiduks' : 'Ei leidnud toodet poest';
   next = record(next, itemId, userId, label, item.status, status, note);
-  if (outcome === 'unavailable' && item.created_by !== userId) next = notify(next, { user_id: item.created_by, actor_id: userId, list_id: item.list_id, item_id: itemId, type: 'item_unavailable', title: 'Toodet ei olnud poes', body: `${profileName(next, userId)}: „${item.name}“ — poes ei olnud.` });
-  return next;
+  if (outcome === 'unavailable' && item.created_by !== userId) next = notify(next, { user_id: item.created_by, actor_id: userId, list_id: quick?.listId ?? item.list_id, item_id: itemId, type: 'item_unavailable', title: 'Toodet ei olnud poes', body: `${profileName(next, userId)}: „${item.name}“ — poes ei olnud.` });
+  return archiveListIfComplete(next, item.list_id);
 }
 
 export function profileName(state: DemoState, id?: string) { return state.profiles.find((value) => value.id === id)?.display_name ?? 'Kasutaja'; }
