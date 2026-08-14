@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoState } from '../src/data/demoSeed';
-import { categoriesForNewList, claimItem, declineItem, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment } from '../src/data/business';
+import { assignedItemsForUser, categoriesForNewList, claimItem, declineItem, deleteListPreservingFloating, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '../src/data/business';
 import { canManageShoppingContent, deliveryCompletedNotification, deliveryNotification, visibleListsForUser } from '../src/data/access';
 import { selectActiveGroupId } from '../src/data/groups';
 import { GroupMembership } from '../src/types/domain';
@@ -69,6 +69,29 @@ describe('Saarly põhivood', () => {
   it('viijale määratud toode on kohe vastu võetud', () => {
     expect(statusForAssignment('user-b')).toBe('accepted');
     expect(createDemoState().items.find((item) => item.id === 'bread')?.status).toBe('accepted');
+  });
+  it('nimekirja nime ja kirjeldust saab hiljem muuta', () => {
+    const changed = updateShoppingList(createDemoState(), 'aug12', '  Kaubad 14. augustiks  ', '  Uus kirjeldus  ');
+    expect(changed.lists.find((list) => list.id === 'aug12')).toMatchObject({ name: 'Kaubad 14. augustiks', description: 'Uus kirjeldus' });
+  });
+  it('poest leidmata toode ei jää enam kasutajale määratute arvu sisse', () => {
+    const state = createDemoState(); const example = state.items.find((item) => item.id === 'bread')!;
+    state.items.push(...[2, 3, 4, 5].map((index) => ({ ...example, id: `bread-${index}` })));
+    expect(assignedItemsForUser(state, 'user-b')).toHaveLength(5);
+    const changed = setItemOutcome(state, 'bread', 'user-b', 'unavailable');
+    expect(assignedItemsForUser(changed, 'user-b')).toHaveLength(4);
+    expect(changed.items.find((item) => item.id === 'bread')?.assigned_to).toBeUndefined();
+  });
+  it('nimekirja kustutamine säilitab jooksvasse listi vabastatud toote ja selle otsingukatsed', () => {
+    const unavailable = setItemOutcome(createDemoState(), 'bread', 'user-b', 'unavailable', 'Poes ei olnud');
+    const deleted = deleteListPreservingFloating(unavailable, 'aug12', 'user-a');
+    const bread = deleted.items.find((item) => item.id === 'bread');
+    const quickList = deleted.lists.find((list) => list.id === bread?.list_id);
+    expect(deleted.lists.some((list) => list.id === 'aug12')).toBe(false);
+    expect(bread).toMatchObject({ assigned_to: undefined, status: 'unassigned', searched_before: true });
+    expect(quickList?.is_quick_list).toBe(true);
+    expect(deleted.attempts.some((attempt) => attempt.item_id === 'bread' && attempt.note === 'Poes ei olnud')).toBe(true);
+    expect(deleted.activity.some((entry) => entry.item_id === 'bread' && entry.action.includes('Säilitas toote'))).toBe(true);
   });
   it('kõigi ostetud kaupade laevale viimine muudab tooted ja teavitab koostajat laevainfoga', () => {
     const purchased = setItemOutcome(createDemoState(), 'bread', 'user-b', 'purchased');

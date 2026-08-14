@@ -6,18 +6,19 @@ import { DeliveryFormSheet } from '@/components/DeliveryFormSheet';
 import { Button, Card, Empty, Page } from '@/components/ui';
 import { ThemeColors } from '@/theme';
 import { Item } from '@/types/domain';
+import { assignedItemsForUser } from '@/data/business';
 
 export default function AssignedScreen() {
   const app = useApp(); const userId = app.currentUser?.id;
   const styles = makeStyles(app.themeColors);
   const [deliveryListId, setDeliveryListId] = useState<string | null>(null);
-  const items = app.state.items.filter((item) => item.assigned_to === userId && item.status !== 'cancelled' && item.status !== 'delivered');
+  const items = assignedItemsForUser(app.state, userId);
   const toBuy = items.filter((item) => item.status === 'assigned' || item.status === 'accepted');
   const purchased = items.filter((item) => item.status === 'purchased');
-  const myListIds = [...new Set(app.state.items.filter((item) => item.assigned_to === userId && item.status !== 'cancelled').map((item) => item.list_id))];
+  const myListIds = [...new Set(items.map((item) => item.list_id))];
   const readyLists = myListIds.filter((listId) => {
-    const mine = app.state.items.filter((item) => item.list_id === listId && item.assigned_to === userId && item.status !== 'cancelled');
-    return mine.some((item) => item.status === 'purchased') && mine.every((item) => item.status === 'purchased' || item.status === 'delivered');
+    const mine = items.filter((item) => item.list_id === listId);
+    return mine.length > 0 && mine.every((item) => item.status === 'purchased');
   });
   const releaseAll = () => { const run = () => app.releaseAll(); if (Platform.OS === 'web') { if (window.confirm('Kas sa ei saa praegu ühtegi määratud asja võtta? Kõik ostmata asjad liiguvad jooksvasse listi.')) run(); } else Alert.alert('Kas ei saa praegu midagi võtta?', 'Kõik ostmata asjad liiguvad jooksvasse listi.', [{ text: 'Loobu', style: 'cancel' }, { text: 'Jah, vabasta kõik', style: 'destructive', onPress: run }]); };
 

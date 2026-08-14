@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
 import { createDemoState } from '@/data/demoSeed';
-import { acceptItem, categoriesForNewList, claimItem, declineItem, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment } from '@/data/business';
+import { acceptItem, categoriesForNewList, claimItem, declineItem, deleteListPreservingFloating, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '@/data/business';
 import { loadDemo, saveDemo } from '@/data/storage';
 import { hasSupabaseConfig, supabase } from '@/data/supabase';
 import { SupabaseRepository } from '@/data/SupabaseRepository';
@@ -52,6 +52,7 @@ interface AppContextValue {
   releaseAll: () => void;
   outcome: (itemId: string, value: 'purchased' | 'unavailable' | 'delivered', note?: string) => void;
   addList: (name: string, description?: string) => Promise<string>;
+  updateList: (id: string, name: string, description?: string) => Promise<void>;
   archiveList: (id: string) => void;
   deleteList: (id: string) => void;
   addCategory: (listId: string, name: string) => void;
@@ -279,8 +280,15 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     });
     return id;
   };
+  const updateList = async (id: string, name: string, description?: string) => {
+    const cleanName = name.trim();
+    if (!cleanName) throw new Error('Nimekirja nimi ei tohi olla tühi.');
+    const cleanDescription = description?.trim() || undefined;
+    if (hasSupabaseConfig) { await cloud.updateList(id, cleanName, cleanDescription); await refreshCloud(); return; }
+    update((current) => updateShoppingList(current, id, cleanName, cleanDescription));
+  };
   const archiveList = (id: string) => { if (hasSupabaseConfig) void cloud.archiveList(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => ({ ...current, lists: current.lists.map((list) => list.id === id ? { ...list, archived_at: now(), updated_at: now() } : list) })); };
-  const deleteList = (id: string) => { if (hasSupabaseConfig) void cloud.deleteList(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => { const itemIds = new Set(current.items.filter((item) => item.list_id === id).map((item) => item.id)); const deliveryIds = new Set(current.deliveries.filter((delivery) => delivery.list_id === id).map((delivery) => delivery.id)); return { ...current, lists: current.lists.filter((list) => list.id !== id), categories: current.categories.filter((category) => category.list_id !== id), items: current.items.filter((item) => item.list_id !== id), assignments: current.assignments.filter((assignment) => !itemIds.has(assignment.item_id)), attempts: current.attempts.filter((attempt) => !itemIds.has(attempt.item_id)), deliveries: current.deliveries.filter((delivery) => delivery.list_id !== id), deliveryItems: current.deliveryItems.filter((value) => !deliveryIds.has(value.delivery_id)), notifications: current.notifications.filter((value) => value.list_id !== id), activity: current.activity.filter((value) => value.list_id !== id), images: current.images.filter((image) => !itemIds.has(image.item_id)) }; }); };
+  const deleteList = (id: string) => { if (hasSupabaseConfig) void cloud.deleteList(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => deleteListPreservingFloating(current, id, current.currentUserId!)); };
   const addCategory = (listId: string, name: string) => { if (hasSupabaseConfig) { const order = state.categories.filter((value) => value.list_id === listId).length; void cloud.createCategory(listId, cloudGroupId.current!, state.currentUserId!, name, order).then(() => refreshCloud()).catch((error) => show(error.message)); return; } update((current) => {
     const at = now(); const sort_order = current.categories.filter((category) => category.list_id === listId).length;
     const category: Category = { id: uid('category'), list_id: listId, name, sort_order, created_at: at, updated_at: at };
@@ -410,7 +418,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
   const isCreator = canManageShoppingContent(state, state.currentUserId);
   const isAdmin = state.groupMembers.some((member) => member.profile_id === state.currentUserId && member.role === 'admin');
   const demoGroups: GroupMembership[] = state.groups.map((group) => ({ ...group, role: state.groupMembers.find((member) => member.group_id === group.id && member.profile_id === state.currentUserId)?.role ?? 'buyer' }));
-  const value: AppContextValue = { state, mode: hasSupabaseConfig ? 'supabase' : 'demo', ready, currentUser, isMember, isCreator, isAdmin, hasAuthSession: Boolean(authAccount), authEmail: authAccount?.email, authDisplayName: authAccount?.displayName, isAnonymousAccount: Boolean(authAccount?.isAnonymous), availableGroups: hasSupabaseConfig ? availableGroups : demoGroups, activeGroupId: hasSupabaseConfig ? activeGroupId : (state.groups[0]?.id ?? null), groupInvites, themeMode, themeColors, setThemeMode, renameGroup, removeMember, createGroup, switchGroup, createInvite, revokeInvite, signIn, signInEmail, registerEmail, linkEmailAccount, signInGoogle, joinGroup, signOut, resetDemo, claim, accept, decline, releaseAll, outcome, addList, archiveList, deleteList, addCategory, toggleCategory, renameCategory, reorderCategory, addItem, addQuickItem, updateItem, deleteItem, markAllRead, addNote, updateNote, deleteNote, setItemImage, removeItemImage, saveDelivery, createSettlement, markSettlementPaid, confirmSettlementPaid, cancelSettlement };
+  const value: AppContextValue = { state, mode: hasSupabaseConfig ? 'supabase' : 'demo', ready, currentUser, isMember, isCreator, isAdmin, hasAuthSession: Boolean(authAccount), authEmail: authAccount?.email, authDisplayName: authAccount?.displayName, isAnonymousAccount: Boolean(authAccount?.isAnonymous), availableGroups: hasSupabaseConfig ? availableGroups : demoGroups, activeGroupId: hasSupabaseConfig ? activeGroupId : (state.groups[0]?.id ?? null), groupInvites, themeMode, themeColors, setThemeMode, renameGroup, removeMember, createGroup, switchGroup, createInvite, revokeInvite, signIn, signInEmail, registerEmail, linkEmailAccount, signInGoogle, joinGroup, signOut, resetDemo, claim, accept, decline, releaseAll, outcome, addList, updateList, archiveList, deleteList, addCategory, toggleCategory, renameCategory, reorderCategory, addItem, addQuickItem, updateItem, deleteItem, markAllRead, addNote, updateNote, deleteNote, setItemImage, removeItemImage, saveDelivery, createSettlement, markSettlementPaid, confirmSettlementPaid, cancelSettlement };
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

@@ -212,8 +212,9 @@ export class SupabaseRepository {
     if (templates?.length) { const { error: categoryError } = await this.client().from('categories').insert(templates.map((template) => ({ list_id: data.id, name: template.name, sort_order: template.sort_order }))); if (categoryError) throw categoryError; }
     return data.id as string;
   }
+  async updateList(id: string, name: string, description?: string) { const { error } = await this.client().from('shopping_lists').update({ name, description: description ?? null }).eq('id', id); if (error) throw error; }
   async archiveList(id: string) { const { error } = await this.client().from('shopping_lists').update({ archived_at: new Date().toISOString() }).eq('id', id); if (error) throw error; }
-  async deleteList(id: string) { const { error } = await this.client().from('shopping_lists').delete().eq('id', id); if (error) throw error; }
+  async deleteList(id: string) { const { error } = await this.client().rpc('delete_shopping_list_preserving_floating', { target_list: id }); if (error) throw error; }
   async createCategory(listId: string, groupId: string, userId: string, name: string, sortOrder: number) { const { error } = await this.client().from('categories').insert({ list_id: listId, name, sort_order: sortOrder }); if (error) throw error; const { error: templateError } = await this.client().from('category_templates').upsert({ group_id: groupId, created_by: userId, name, sort_order: sortOrder }, { onConflict: 'group_id,name', ignoreDuplicates: true }); if (templateError) throw templateError; }
   async updateCategory(id: string, values: Record<string, unknown>) { const { error } = await this.client().from('categories').update(values).eq('id', id); if (error) throw error; }
   async createItem(values: Record<string, unknown>) { const { data, error } = await this.client().from('items').insert(values).select('id').single(); if (error) throw error; return data.id as string; }

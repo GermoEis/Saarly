@@ -1,4 +1,4 @@
-import { Category, CategoryTemplate, Delivery, DemoState, ItemStatus, Notification, ThemeMode } from '@/types/domain';
+import { Category, CategoryTemplate, Delivery, DemoState, ItemStatus, Notification, ShoppingList, ThemeMode } from '@/types/domain';
 import { deliveryCompletedNotification } from './access';
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -61,6 +61,82 @@ export function profileName(state: DemoState, id?: string) { return state.profil
 
 export function statusForAssignment(assignedTo?: string): ItemStatus {
   return assignedTo ? 'accepted' : 'unassigned';
+}
+
+export function assignedItemsForUser(state: DemoState, userId?: string) {
+  if (!userId) return [];
+  return state.items.filter((item) =>
+    item.assigned_to === userId && ['assigned', 'accepted', 'purchased'].includes(item.status),
+  );
+}
+
+export function updateShoppingList(state: DemoState, listId: string, name: string, description?: string): DemoState {
+  const cleanName = name.trim();
+  if (!cleanName) return state;
+  const cleanDescription = description?.trim() || undefined;
+  return { ...state, lists: state.lists.map((list) => list.id === listId ? { ...list, name: cleanName, description: cleanDescription, updated_at: timestamp() } : list) };
+}
+
+export function deleteListPreservingFloating(state: DemoState, listId: string, actorId: string): DemoState {
+  const list = state.lists.find((value) => value.id === listId);
+  if (!list || list.is_quick_list) return state;
+
+  const at = timestamp();
+  const floating = state.items.filter((item) =>
+    item.list_id === listId && !item.assigned_to && ['unassigned', 'unavailable'].includes(item.status),
+  );
+  const floatingIds = new Set(floating.map((item) => item.id));
+  const deletedIds = new Set(state.items.filter((item) => item.list_id === listId && !floatingIds.has(item.id)).map((item) => item.id));
+  const existingQuickList = state.lists.find((value) => value.group_id === list.group_id && value.is_quick_list);
+  const quickListId = existingQuickList?.id ?? `${uid()}-quick-list`;
+  const existingQuickCategory = state.categories.find((value) => value.list_id === quickListId);
+  const quickCategoryId = existingQuickCategory?.id ?? `${uid()}-quick-category`;
+  const quickList: ShoppingList = existingQuickList ?? {
+    id: quickListId,
+    group_id: list.group_id,
+    created_by: actorId,
+    name: 'Jooksev list',
+    description: 'Ilma eraldi ostunimekirjata lisatud kaubad',
+    is_quick_list: true,
+    created_at: at,
+    updated_at: at,
+  };
+  const quickCategory: Category = existingQuickCategory ?? {
+    id: quickCategoryId,
+    list_id: quickListId,
+    name: 'Üldine',
+    sort_order: 0,
+    created_at: at,
+    updated_at: at,
+  };
+  const deliveryIds = new Set(state.deliveries.filter((delivery) => delivery.list_id === listId).map((delivery) => delivery.id));
+  const movedActivity = state.activity
+    .filter((value) => value.list_id !== listId || Boolean(value.item_id && floatingIds.has(value.item_id)))
+    .map((value) => value.list_id === listId ? { ...value, list_id: quickListId } : value);
+  const preservationActivity = floating.map((item) => ({
+    id: uid(), group_id: list.group_id, actor_id: actorId, list_id: quickListId, item_id: item.id,
+    action: 'Säilitas toote jooksvas listis nimekirja kustutamisel', previous_status: item.status,
+    new_status: item.status, created_at: at, updated_at: at,
+  }));
+
+  return {
+    ...state,
+    lists: [...state.lists.filter((value) => value.id !== listId && value.id !== quickListId), quickList],
+    categories: [...state.categories.filter((value) => value.list_id !== listId && value.id !== quickCategoryId), quickCategory],
+    items: state.items
+      .filter((item) => item.list_id !== listId || floatingIds.has(item.id))
+      .map((item) => floatingIds.has(item.id) ? { ...item, list_id: quickListId, category_id: quickCategoryId, updated_at: at } : item),
+    assignments: state.assignments.filter((value) => !deletedIds.has(value.item_id)),
+    attempts: state.attempts.filter((value) => !deletedIds.has(value.item_id)),
+    deliveries: state.deliveries.filter((value) => value.list_id !== listId),
+    deliveryItems: state.deliveryItems.filter((value) => !deliveryIds.has(value.delivery_id) && !deletedIds.has(value.item_id)),
+    notifications: state.notifications
+      .filter((value) => value.list_id !== listId || Boolean(value.item_id && floatingIds.has(value.item_id)))
+      .map((value) => value.list_id === listId ? { ...value, list_id: quickListId } : value),
+    activity: [...movedActivity, ...preservationActivity],
+    images: state.images.filter((value) => !deletedIds.has(value.item_id)),
+    settlements: state.settlements.map((value) => value.shopping_list_id === listId ? { ...value, shopping_list_id: undefined, updated_at: at } : value),
+  };
 }
 
 export function setProfileThemePreference(state: DemoState, profileId: string, theme: ThemeMode): DemoState {

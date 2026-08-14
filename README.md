@@ -70,7 +70,7 @@ npm run typecheck
 npx expo export --platform web
 ```
 
-Testid katavad sama ujuva toote samaaegse võtmise, keeldumise, poest puudumise ajaloo, ostja seose säilimise, grupiisolatsiooni, laevateavituse teksti ning arvelduste privaatsuse, tasumise ja tühistamise voo. Responsiivset telefonivaadet ja töölauavaadet kontrollitakse enne väljastamist päris veebirakenduses.
+Testid katavad sama ujuva toote samaaegse võtmise, keeldumise, poest puudumise ajaloo, nimekirja muutmise ja turvalise kustutamise, ostja seose säilimise, grupiisolatsiooni, laevateavituse teksti ning arvelduste privaatsuse, tasumise ja tühistamise voo. Responsiivset telefonivaadet ja töölauavaadet kontrollitakse enne väljastamist päris veebirakenduses.
 
 ## Supabase'i kasutuselevõtt
 
@@ -96,6 +96,7 @@ Migratsioon `supabase/migrations/20260807120000_initial_saarly.sql` loob kõik d
 - `create_group_invite` — loob ühekordse 30 päeva kehtiva kutsekoodi;
 - `redeem_group_invite` — liidab sisselogitud konto grupiga atomaarse operatsioonina;
 - `revoke_group_invite` — tühistab kasutamata kutse.
+- `delete_shopping_list_preserving_floating` — tõstab vabad tooted enne nimekirja kustutamist püsivasse Jooksvasse listi; funktsioon töötab kutsuja õigustes ja järgib RLS-i;
 - `create_settlement` — loob raha saaja ja võlgniku vahelise privaatse arvelduse ning teavitab võlgnikku;
 - `mark_settlement_paid`, `confirm_settlement_paid` ja `cancel_settlement` — muudavad arvelduse olekut ainult õige osapoole nimel. `settlements` tabeli RLS lubab kirjet lugeda ainult kahel osapoolel.
 
