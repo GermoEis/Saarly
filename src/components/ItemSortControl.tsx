@@ -23,12 +23,12 @@ export function ItemSortControl({ value, onChange }: { value: ItemSortOrder; onC
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  wrap: { gap: 9 },
-  label: { color: colors.ink, fontSize: 16, fontWeight: '800' },
+  wrap: { gap: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14 },
+  label: { color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: '800', letterSpacing: .25, textTransform: 'uppercase' },
   options: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  option: { minHeight: 44, justifyContent: 'center', borderRadius: 99, borderWidth: 1, borderColor: colors.fieldBorder, backgroundColor: colors.field, paddingHorizontal: 14, paddingVertical: 9 },
+  option: { minHeight: 42, justifyContent: 'center', borderRadius: 11, borderWidth: 1, borderColor: colors.fieldBorder, backgroundColor: colors.field, paddingHorizontal: 13, paddingVertical: 8 },
   optionSelected: { borderColor: colors.primary, backgroundColor: colors.primary },
-  optionText: { color: colors.ink, fontSize: 15, fontWeight: '800' },
+  optionText: { color: colors.ink, fontSize: 14, fontWeight: '800' },
   optionTextSelected: { color: colors.onPrimary },
-  pressed: { opacity: .72 },
+  pressed: { opacity: .84 },
 });

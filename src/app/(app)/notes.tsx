@@ -63,9 +63,9 @@ export default function NotesScreen() {
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  title: { color: colors.ink, fontSize: 20, fontWeight: '900' },
+  title: { color: colors.ink, fontSize: 20, lineHeight: 26, fontWeight: '800', letterSpacing: -.25 },
   content: { color: colors.muted, fontSize: 16, lineHeight: 24 },
   empty: { color: colors.muted, fontSize: 16, lineHeight: 24, textAlign: 'center' },
-  actions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 2 },
+  actions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 4, paddingTop: 3 },
   action: { flexGrow: 1, minWidth: 140 },
 });
