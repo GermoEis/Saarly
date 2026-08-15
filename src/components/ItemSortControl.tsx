@@ -23,12 +23,12 @@ export function ItemSortControl({ value, onChange }: { value: ItemSortOrder; onC
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  wrap: { gap: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14 },
-  label: { color: colors.muted, fontSize: 13, lineHeight: 18, fontWeight: '800', letterSpacing: .25, textTransform: 'uppercase' },
+  wrap: { gap: 9 },
+  label: { color: colors.muted, fontSize: 14, lineHeight: 19, fontWeight: '600' },
   options: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  option: { minHeight: 42, justifyContent: 'center', borderRadius: 11, borderWidth: 1, borderColor: colors.fieldBorder, backgroundColor: colors.field, paddingHorizontal: 13, paddingVertical: 8 },
-  optionSelected: { borderColor: colors.primary, backgroundColor: colors.primary },
-  optionText: { color: colors.ink, fontSize: 14, fontWeight: '800' },
-  optionTextSelected: { color: colors.onPrimary },
+  option: { minHeight: 40, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.fieldBorder, backgroundColor: colors.field, paddingHorizontal: 12, paddingVertical: 8 },
+  optionSelected: { borderColor: colors.secondaryBorder, backgroundColor: colors.primarySoft },
+  optionText: { color: colors.ink, fontSize: 14, fontWeight: '600' },
+  optionTextSelected: { color: colors.primaryDark, fontWeight: '700' },
   pressed: { opacity: .84 },
 });

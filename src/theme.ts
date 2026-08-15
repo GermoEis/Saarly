@@ -11,27 +11,27 @@ export interface ThemeColors {
 }
 
 export const lightColors: ThemeColors = {
-  ink: '#14231C', muted: '#607068', primary: '#0F7A57', primaryDark: '#07543C', primarySoft: '#E4F4EC',
-  cream: '#F2F6F3', surface: '#FFFFFF', background: '#F6F8F7', border: '#DCE5E0', danger: '#B23B35',
-  dangerSoft: '#FFF0EE', gold: '#8C650A', field: '#FFFFFF', fieldBorder: '#C7D4CD', subtle: '#F0F4F2',
-  secondaryBorder: '#B8DCCA', dangerBorder: '#F0C4C0', close: '#EDF1EF', tabInactive: '#687870',
-  progressTrack: '#E8EEEA', accentSoft: '#F1F0FA', accentBorder: '#D3D0EA', accentText: '#47417E',
-  unreadSurface: '#F7FCF9', unreadBorder: '#91C9AB', timestamp: '#7B8881', warning: '#9B3B17',
-  photoSurface: '#E9EFEB', overlay: 'rgba(8, 23, 16, .48)', onPrimary: '#FFFFFF',
+  ink: '#18211D', muted: '#68716C', primary: '#176B4D', primaryDark: '#0F513A', primarySoft: '#EAF3EE',
+  cream: '#F3F5F3', surface: '#FFFFFF', background: '#F5F6F5', border: '#E1E5E2', danger: '#A63D38',
+  dangerSoft: '#FBF1F0', gold: '#856413', field: '#FFFFFF', fieldBorder: '#CBD2CD', subtle: '#F3F5F4',
+  secondaryBorder: '#C8D8CF', dangerBorder: '#E8CAC7', close: '#F0F2F1', tabInactive: '#737C77',
+  progressTrack: '#E7EBE8', accentSoft: '#F3F2F8', accentBorder: '#D8D5E5', accentText: '#4B4774',
+  unreadSurface: '#F8FBF9', unreadBorder: '#AFCCBC', timestamp: '#828A86', warning: '#95411F',
+  photoSurface: '#ECEFEC', overlay: 'rgba(12, 20, 16, .46)', onPrimary: '#FFFFFF',
 };
 
 export const darkColors: ThemeColors = {
-  ink: '#F1F6F3', muted: '#A9B8B0', primary: '#4BCB91', primaryDark: '#BFF3D9', primarySoft: '#173B2C',
-  cream: '#09110D', surface: '#142019', background: '#0C1510', border: '#2C3D34', danger: '#FF9E97',
-  dangerSoft: '#3A211F', gold: '#F1CA67', field: '#101A14', fieldBorder: '#41554A', subtle: '#1B2921',
-  secondaryBorder: '#2D664D', dangerBorder: '#73433F', close: '#25342C', tabInactive: '#91A198',
-  progressTrack: '#29382F', accentSoft: '#24233A', accentBorder: '#565184', accentText: '#D2CFFF',
-  unreadSurface: '#16281E', unreadBorder: '#367D59', timestamp: '#91A198', warning: '#FFB08A',
-  photoSurface: '#223129', overlay: 'rgba(0, 0, 0, .68)', onPrimary: '#071A12',
+  ink: '#F0F3F1', muted: '#A6AEA9', primary: '#45BE86', primaryDark: '#B9E9D1', primarySoft: '#19382B',
+  cream: '#0D120F', surface: '#161D19', background: '#101512', border: '#303A34', danger: '#F19A94',
+  dangerSoft: '#352321', gold: '#E4C56B', field: '#121814', fieldBorder: '#465149', subtle: '#1C2420',
+  secondaryBorder: '#355E49', dangerBorder: '#6A4440', close: '#252D28', tabInactive: '#929B95',
+  progressTrack: '#2B342F', accentSoft: '#242432', accentBorder: '#4E4D67', accentText: '#CBC9EA',
+  unreadSurface: '#19251E', unreadBorder: '#3C6A53', timestamp: '#929B95', warning: '#F5AD88',
+  photoSurface: '#252D28', overlay: 'rgba(0, 0, 0, .66)', onPrimary: '#07150E',
 };
 
 // Alles jäetud ainult vanade, Saarly põhivoos kasutamata Expo mallikomponentide jaoks.
 export const colors = lightColors;
 export const colorsFor = (mode: ThemeMode) => mode === 'dark' ? darkColors : lightColors;
-export const shadowFor = (mode: ThemeMode) => ({ boxShadow: mode === 'dark' ? '0 10px 28px rgba(0, 0, 0, .22)' : '0 1px 2px rgba(20, 35, 28, .04), 0 10px 30px rgba(20, 64, 45, .055)' }) as const;
+export const shadowFor = (mode: ThemeMode) => ({ boxShadow: mode === 'dark' ? '0 1px 2px rgba(0, 0, 0, .24)' : '0 1px 2px rgba(20, 35, 28, .045)' }) as const;
 export const shadow = shadowFor('light');

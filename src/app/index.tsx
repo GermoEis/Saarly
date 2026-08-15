@@ -5,6 +5,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useApp } from '@/context/AppContext';
 import { googleAuthEnabled } from '@/data/supabase';
 import { ThemeColors } from '@/theme';
+import { AppIcon } from '@/components/AppIcon';
 import { Avatar, Button, Field, Loading } from '@/components/ui';
 
 type AuthView = 'login' | 'register' | 'workspace';
@@ -73,7 +74,7 @@ export default function LoginScreen() {
   });
 
   return <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-    <View style={styles.brand}><View style={styles.logo}><Text style={styles.logoText}>S</Text></View><Text style={styles.name}>Saarly</Text><Text style={styles.tagline}>Ostunimekiri, mis jõuab koos kaubaga laevale.</Text></View>
+    <View style={styles.brand}><View style={styles.logo}><AppIcon name="ship" color={app.themeColors.onPrimary} size={40} strokeWidth={1.8} /></View><Text style={styles.name}>Saarly</Text><Text style={styles.tagline}>Ostunimekiri, mis jõuab koos kaubaga laevale.</Text></View>
     <View style={styles.panel}>
       {app.mode === 'demo' ? <DemoLogin app={app} styles={styles} /> : <>
         {activeView !== 'workspace' ? <View style={styles.switchRow}>
@@ -153,30 +154,29 @@ function DemoLogin({ app, styles }: { app: ReturnType<typeof useApp>; styles: Re
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.cream },
-  content: { minHeight: '100%', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 24 },
+  content: { minHeight: '100%', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 22 },
   brand: { alignItems: 'center', maxWidth: 470 },
-  logo: { width: 72, height: 72, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.secondaryBorder, boxShadow: '0 10px 28px rgba(15, 122, 87, .18)' },
-  logoText: { color: colors.onPrimary, fontSize: 39, lineHeight: 45, fontWeight: '900', letterSpacing: -1 },
-  name: { fontSize: 36, lineHeight: 43, color: colors.ink, fontWeight: '900', letterSpacing: -1, marginTop: 12 },
+  logo: { width: 68, height: 68, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  name: { fontSize: 34, lineHeight: 41, color: colors.ink, fontWeight: '800', letterSpacing: -.7, marginTop: 11 },
   tagline: { fontSize: 17, color: colors.muted, textAlign: 'center', lineHeight: 25, marginTop: 2 },
-  panel: { width: '100%', maxWidth: 540, borderWidth: 1, borderColor: colors.border, borderRadius: 26, backgroundColor: colors.surface, padding: 25, gap: 17, boxShadow: '0 2px 4px rgba(20, 35, 28, .04), 0 18px 50px rgba(20, 64, 45, .10)' },
-  switchRow: { flexDirection: 'row', gap: 6, backgroundColor: colors.subtle, borderRadius: 14, padding: 4, borderWidth: 1, borderColor: colors.border },
-  switchButton: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
-  switchButtonActive: { backgroundColor: colors.primary },
-  switchText: { color: colors.ink, fontSize: 16, fontWeight: '800' },
-  switchTextActive: { color: colors.onPrimary },
-  demoPill: { alignSelf: 'flex-start', backgroundColor: colors.primarySoft, borderRadius: 99, paddingHorizontal: 11, paddingVertical: 6 },
-  demoPillText: { color: colors.primaryDark, fontSize: 12, letterSpacing: 1, fontWeight: '900' },
-  title: { fontSize: 26, lineHeight: 33, fontWeight: '900', letterSpacing: -.45, color: colors.ink },
+  panel: { width: '100%', maxWidth: 540, borderWidth: 1, borderColor: colors.border, borderRadius: 16, backgroundColor: colors.surface, padding: 24, gap: 17, boxShadow: '0 2px 8px rgba(20, 35, 28, .055)' },
+  switchRow: { flexDirection: 'row', gap: 4, backgroundColor: colors.subtle, borderRadius: 11, padding: 4, borderWidth: 1, borderColor: colors.border },
+  switchButton: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
+  switchButtonActive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, boxShadow: '0 1px 2px rgba(20, 35, 28, .05)' },
+  switchText: { color: colors.muted, fontSize: 16, fontWeight: '600' },
+  switchTextActive: { color: colors.primaryDark, fontWeight: '700' },
+  demoPill: { alignSelf: 'flex-start', backgroundColor: colors.subtle, borderRadius: 7, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 9, paddingVertical: 5 },
+  demoPillText: { color: colors.muted, fontSize: 11, letterSpacing: .7, fontWeight: '700' },
+  title: { fontSize: 25, lineHeight: 32, fontWeight: '700', letterSpacing: -.3, color: colors.ink },
   copy: { fontSize: 16, lineHeight: 24, color: colors.muted },
-  choiceBlock: { gap: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 18, padding: 17, backgroundColor: colors.subtle },
-  choiceTitle: { fontSize: 19, fontWeight: '900', letterSpacing: -.2, color: colors.ink },
+  choiceBlock: { gap: 13, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 16, backgroundColor: colors.subtle },
+  choiceTitle: { fontSize: 19, fontWeight: '700', letterSpacing: -.15, color: colors.ink },
   error: { color: colors.danger, fontSize: 15, lineHeight: 21, fontWeight: '700' },
   success: { color: colors.primaryDark, backgroundColor: colors.primarySoft, padding: 12, borderRadius: 10, fontSize: 15, lineHeight: 21, fontWeight: '700' },
   googleHelp: { color: colors.muted, fontSize: 14, lineHeight: 20, textAlign: 'center' },
   users: { gap: 10 },
-  user: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.subtle, borderRadius: 16, padding: 10, borderWidth: 1, borderColor: colors.border },
-  userName: { fontSize: 17, fontWeight: '800', color: colors.ink },
+  user: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.surface, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: colors.border },
+  userName: { fontSize: 17, fontWeight: '700', color: colors.ink },
   arrow: { color: colors.primary, fontSize: 31, paddingRight: 6 },
   foot: { color: colors.muted, fontSize: 13, textAlign: 'center' },
 });

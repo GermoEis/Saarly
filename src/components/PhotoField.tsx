@@ -2,6 +2,7 @@ import { Alert, Image, Platform, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '@/context/AppContext';
 import { ThemeColors } from '@/theme';
+import { AppIcon } from './AppIcon';
 import { Button } from './ui';
 
 export type SelectedPhoto = ImagePicker.ImagePickerAsset;
@@ -20,16 +21,16 @@ export function PhotoField({ value, onChange }: { value: SelectedPhoto | null; o
   };
   return <View style={styles.section}>
     <Text style={styles.label}>Foto (valikuline)</Text>
-    {value ? <Image source={{ uri: value.uri }} resizeMode="cover" style={styles.preview} /> : <View style={styles.placeholder}><Text style={styles.placeholderIcon}>▧</Text><Text style={styles.help}>Foto saad lisada kohe enne toote salvestamist.</Text></View>}
+    {value ? <Image source={{ uri: value.uri }} resizeMode="cover" style={styles.preview} /> : <View style={styles.placeholder}><AppIcon name="image" color={app.themeColors.muted} size={27} strokeWidth={1.7} /><Text style={styles.help}>Foto saad lisada kohe enne toote salvestamist.</Text></View>}
     <View style={styles.actions}><View style={styles.action}><Button label="Tee foto" icon="◉" variant="secondary" onPress={() => void pick(true)} /></View><View style={styles.action}><Button label={Platform.OS === 'web' ? 'Vali fail' : 'Vali galeriist'} icon="▣" variant="secondary" onPress={() => void pick(false)} /></View></View>
     {value ? <Button label="Eemalda valitud foto" variant="ghost" onPress={() => onChange(null)} /> : null}
   </View>;
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  section: { gap: 10 }, label: { color: colors.ink, fontSize: 15, fontWeight: '700' },
-  preview: { width: '100%', height: 210, borderRadius: 14, backgroundColor: colors.photoSurface },
-  placeholder: { minHeight: 115, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.fieldBorder, borderRadius: 14, alignItems: 'center', justifyContent: 'center', padding: 16, gap: 6 },
-  placeholderIcon: { color: colors.ink, fontSize: 30 }, help: { color: colors.muted, fontSize: 16, lineHeight: 23, textAlign: 'center' },
+  section: { gap: 10 }, label: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  preview: { width: '100%', height: 210, borderRadius: 10, backgroundColor: colors.photoSurface },
+  placeholder: { minHeight: 115, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.fieldBorder, borderRadius: 10, backgroundColor: colors.subtle, alignItems: 'center', justifyContent: 'center', padding: 16, gap: 7 },
+  help: { color: colors.muted, fontSize: 16, lineHeight: 23, textAlign: 'center' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, action: { flex: 1, minWidth: 180 },
 });

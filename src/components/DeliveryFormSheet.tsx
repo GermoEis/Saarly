@@ -40,7 +40,7 @@ function Choice({ label, values, selected, onSelect }: { label: string; values: 
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  label: { color: colors.ink, fontSize: 15, fontWeight: '700' }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  chip: { borderWidth: 1, borderColor: colors.fieldBorder, backgroundColor: colors.field, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 9 },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary }, chipText: { color: colors.ink, fontWeight: '700' }, chipTextActive: { color: colors.onPrimary },
+  label: { color: colors.ink, fontSize: 15, fontWeight: '600' }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  chip: { borderWidth: 1, borderColor: colors.fieldBorder, backgroundColor: colors.field, borderRadius: 8, paddingHorizontal: 11, paddingVertical: 8 },
+  chipActive: { backgroundColor: colors.primarySoft, borderColor: colors.secondaryBorder }, chipText: { color: colors.ink, fontWeight: '600' }, chipTextActive: { color: colors.primaryDark, fontWeight: '700' },
 });

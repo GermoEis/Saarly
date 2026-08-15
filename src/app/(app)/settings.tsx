@@ -181,10 +181,10 @@ function SettingsContent() {
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  section: { fontSize: 20, fontWeight: '900', color: colors.ink },
+  section: { fontSize: 20, fontWeight: '700', color: colors.ink },
   memberCount: { color: colors.muted, fontSize: 15, marginTop: -7 },
-  user: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 14, flexWrap: 'wrap' },
-  active: { backgroundColor: colors.primarySoft },
+  user: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 8, flexWrap: 'wrap' },
+  active: { backgroundColor: colors.subtle },
   identity: { flex: 1, minWidth: 150 },
   actions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   themeActions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
@@ -194,10 +194,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   groupChoices: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   groupChoice: { minWidth: 160, flexGrow: 1 },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 3 },
-  choiceTitle: { color: colors.ink, fontSize: 17, fontWeight: '900' },
+  choiceTitle: { color: colors.ink, fontSize: 17, fontWeight: '700' },
   invites: { gap: 9, marginTop: 5 },
   inviteRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9 },
-  userName: { fontSize: 16, fontWeight: '900', color: colors.ink },
+  userName: { fontSize: 16, fontWeight: '700', color: colors.ink },
   role: { color: colors.muted, fontSize: 14 },
   copy: { color: colors.muted, fontSize: 16, lineHeight: 24 },
   errorCard: { backgroundColor: colors.dangerSoft, borderColor: colors.dangerBorder },
