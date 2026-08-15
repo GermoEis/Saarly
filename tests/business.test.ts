@@ -6,8 +6,33 @@ import { selectActiveGroupId } from '../src/data/groups';
 import { GroupMembership } from '../src/types/domain';
 import { cancelSettlementInDemo, confirmSettlementPaidInDemo, createSettlementInDemo, markSettlementPaidInDemo, settlementTotalsByParty, settlementVisibleTo } from '../src/data/settlements';
 import { sortItems } from '../src/data/itemSorting';
+import { frequentItemSuggestions } from '../src/data/frequentItems';
+import { moveItemToTrash, moveListToTrash, purgeExpiredTrash, restoreItemFromTrash, restoreListFromTrash } from '../src/data/trash';
 
 describe('Saarly põhivood', () => {
+  it('sageli ostetud toode kasutab viimase lisamise muudetavaid väärtusi', () => {
+    const state = createDemoState();
+    const previousMilk = state.items.find((item) => item.id === 'milk')!;
+    state.items.push({ ...previousMilk, id: 'milk-latest', quantity: 5, unit: 'pudelit', updated_at: '2026-08-15T10:00:00Z' });
+    const suggestion = frequentItemSuggestions(state, 'pii')[0];
+    expect(suggestion).toMatchObject({ name: 'Piim', quantity: 5, unit: 'pudelit', categoryName: 'Toidukaubad', useCount: 2 });
+  });
+  it('demos saab kustutatud toote ja nimekirja prügikastist taastada', () => {
+    const state = createDemoState();
+    const trashedItem = moveItemToTrash(state, 'milk', '2026-08-15T10:00:00Z');
+    expect(trashedItem.items.find((item) => item.id === 'milk')?.deleted_at).toBeTruthy();
+    expect(restoreItemFromTrash(trashedItem, 'milk').items.find((item) => item.id === 'milk')?.deleted_at).toBeUndefined();
+    const trashedList = moveListToTrash(state, 'aug12', '2026-08-15T10:00:00Z');
+    expect(trashedList.lists.find((list) => list.id === 'aug12')?.deleted_at).toBeTruthy();
+    expect(restoreListFromTrash(trashedList, 'aug12').lists.find((list) => list.id === 'aug12')?.deleted_at).toBeUndefined();
+  });
+  it('üle 30 päeva prügikastis olnud toode eemaldatakse koos alamandmetega', () => {
+    const state = moveItemToTrash(createDemoState(), 'milk', '2026-07-01T00:00:00Z');
+    const purged = purgeExpiredTrash(state, new Date('2026-08-15T00:00:00Z'));
+    expect(purged.items.some((item) => item.id === 'milk')).toBe(false);
+    expect(purged.images.some((image) => image.item_id === 'milk')).toBe(false);
+    expect(purged.attempts.some((attempt) => attempt.item_id === 'milk')).toBe(false);
+  });
   it('tooteid saab sortida nime ja lisamisaja järgi', () => {
     const items = createDemoState().items.slice(0, 3).map((item, index) => ({
       ...item,

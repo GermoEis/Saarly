@@ -25,13 +25,13 @@ export interface GroupInvite extends BaseEntity {
   revoked_at?: ISODate;
 }
 export interface ShoppingList extends BaseEntity {
-  group_id: string; created_by: string; name: string; description?: string; archived_at?: ISODate; is_quick_list?: boolean;
+  group_id: string; created_by: string; name: string; description?: string; archived_at?: ISODate; deleted_at?: ISODate; is_quick_list?: boolean;
 }
 export interface Category extends BaseEntity { list_id: string; name: string; sort_order: number; collapsed?: boolean }
 export interface CategoryTemplate extends BaseEntity { group_id: string; created_by: string; name: string; sort_order: number }
 export interface Item extends BaseEntity {
   list_id: string; category_id: string; created_by: string; name: string; quantity: number;
-  unit?: string; note?: string; assigned_to?: string; status: ItemStatus; searched_before: boolean;
+  unit?: string; note?: string; assigned_to?: string; status: ItemStatus; searched_before: boolean; deleted_at?: ISODate;
 }
 export interface ItemAssignment extends BaseEntity {
   item_id: string; user_id: string; assigned_by: string; status: 'pending' | 'accepted' | 'declined' | 'released';

@@ -39,7 +39,7 @@ export default function SettlementsScreen() {
     .filter((member) => member.profile_id !== userId)
     .map((member) => app.state.profiles.find((profile) => profile.id === member.profile_id))
     .filter((profile): profile is NonNullable<typeof profile> => Boolean(profile));
-  const lists = app.state.lists.filter((list) => !list.is_quick_list && !list.archived_at);
+  const lists = app.state.lists.filter((list) => !list.is_quick_list && !list.archived_at && !list.deleted_at);
 
   const closeForm = () => {
     if (saving) return;

@@ -4,6 +4,7 @@ import { Alert, Platform, Share, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '@/context/AppContext';
 import { Avatar, Button, Card, Field, Page } from '@/components/ui';
 import { ThemeColors } from '@/theme';
+import { DemoNotificationsCard } from '@/components/DemoNotificationsCard';
 
 export default function SettingsScreen() {
   const app = useApp();
@@ -112,6 +113,7 @@ function SettingsContent() {
       <Text style={styles.copy}>Valik salvestatakse sinu kasutajale ja rakendub järgmisel avamisel automaatselt.</Text>
       <View style={styles.themeActions}><View style={styles.themeButton}><Button label="Hele režiim" icon="☀" variant={app.themeMode === 'light' ? 'primary' : 'secondary'} onPress={() => void app.setThemeMode('light')} /></View><View style={styles.themeButton}><Button label="Tume režiim" icon="☾" variant={app.themeMode === 'dark' ? 'primary' : 'secondary'} onPress={() => void app.setThemeMode('dark')} /></View></View>
     </Card>
+    <DemoNotificationsCard />
     {app.mode === 'supabase' ? <Card>
       <Text style={styles.section}>Minu grupid</Text>
       <Text style={styles.copy}>Vali grupp, mille nimekirju, märkmeid ja teavitusi praegu näed.</Text>

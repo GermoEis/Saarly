@@ -4,6 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { AppProvider, useApp } from '@/context/AppContext';
+import { UndoNotice } from '@/components/UndoNotice';
+import { registerSaarlyServiceWorker } from '@/services/webPush';
 
 export default function RootLayout() {
   return <AppProvider><ThemedRoot /></AppProvider>;
@@ -17,6 +19,7 @@ function ThemedRoot() {
       document.documentElement.style.backgroundColor = app.themeColors.background;
     }
   }, [app.themeMode, app.themeColors.background]);
+  useEffect(() => { if (Platform.OS === 'web') void registerSaarlyServiceWorker(); }, []);
   return <>
     <Head>
       <title>Saarly</title>
@@ -29,5 +32,6 @@ function ThemedRoot() {
     </Head>
     <StatusBar style={app.themeMode === 'dark' ? 'light' : 'dark'} />
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: app.themeColors.background } }} />
+    <UndoNotice />
   </>;
 }

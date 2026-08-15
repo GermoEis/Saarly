@@ -4,7 +4,7 @@ export function canManageShoppingContent(state: DemoState, userId: string | null
 }
 export function visibleListsForUser(state: DemoState, userId: string) {
   const groupIds = new Set(state.groupMembers.filter((member) => member.profile_id === userId).map((member) => member.group_id));
-  return state.lists.filter((list) => groupIds.has(list.group_id));
+  return state.lists.filter((list) => groupIds.has(list.group_id) && !list.deleted_at);
 }
 export function deliveryNotification(actor: string, ship: string, date: string, time: string | undefined, place: string) {
   return `${actor} viib kaubad ${date.split('-').reverse().join('.')}${time ? ` kell ${time}` : ''} laevale ${ship}. Kaubad antakse üle ${place}${place.toLowerCase().includes('terminal') ? 'is' : 's'}.`;

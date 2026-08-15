@@ -25,8 +25,8 @@ export function ItemCard({ item, compact = false }: { item: Item; compact?: bool
 
   const confirmDelete = () => {
     const execute = () => { app.deleteItem(item.id); setOpen(false); };
-    if (Platform.OS === 'web') { if (window.confirm(`Kas kustutada toode „${item.name}“?`)) execute(); }
-    else Alert.alert('Kustuta toode?', `„${item.name}“ eemaldatakse nimekirjast.`, [{ text: 'Loobu', style: 'cancel' }, { text: 'Kustuta', style: 'destructive', onPress: execute }]);
+    if (Platform.OS === 'web') { if (window.confirm(`Kas liigutada toode „${item.name}“ prügikasti? Saad selle 30 päeva jooksul taastada.`)) execute(); }
+    else Alert.alert('Liiguta prügikasti?', `„${item.name}“ saab 30 päeva jooksul taastada.`, [{ text: 'Loobu', style: 'cancel' }, { text: 'Prügikasti', style: 'destructive', onPress: execute }]);
   };
   const pickImage = async (camera = false) => {
     const result = camera ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: .75, base64: true }) : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: .75, base64: true });
@@ -55,7 +55,7 @@ export function ItemCard({ item, compact = false }: { item: Item; compact?: bool
       {!item.assigned_to && (item.status === 'unassigned' || item.status === 'unavailable') ? <Button label="Võtan endale" icon="+" onPress={() => app.claim(item.id)} /> : null}
       {mine && (item.status === 'assigned' || item.status === 'accepted') ? <View style={styles.actions}><Button label="Ostetud" icon="✓" onPress={() => app.outcome(item.id, 'purchased')} /><Button label="Ei leidnud / ei ole" icon="!" variant="danger" onPress={() => app.outcome(item.id, 'unavailable', 'Märgitud Saarly rakenduses')} /></View> : null}
       <View style={{ gap: 10 }}><Text style={styles.sectionTitle}>Tegevusajalugu</Text>{history.length ? history.map((entry) => <View key={entry.id} style={styles.timeline}><View style={styles.dot} /><View style={{ flex: 1 }}><Text style={styles.timelineText}><Text style={{ fontWeight: '800' }}>{new Date(entry.created_at).toLocaleTimeString('et-EE', { hour: '2-digit', minute: '2-digit' })}</Text> – {profileName(app.state, entry.actor_id)} {entry.action.toLocaleLowerCase('et-EE')}</Text>{entry.explanation ? <Text style={styles.timelineNote}>{entry.explanation}</Text> : null}</View></View>) : <Text style={styles.note}>Tegevusi veel pole.</Text>}</View>
-      {app.isCreator ? <Button label="Kustuta toode" variant="danger" onPress={confirmDelete} /> : null}
+      {app.isCreator ? <Button label={app.mode === 'demo' ? 'Liiguta prügikasti' : 'Kustuta toode'} variant="danger" onPress={confirmDelete} /> : null}
     </Sheet>
   </>;
 }

@@ -51,9 +51,9 @@ function ensureQuickList(state: DemoState, groupId: string, actorId: string, at:
 
 export function archiveListIfComplete(state: DemoState, listId: string): DemoState {
   const list = state.lists.find((value) => value.id === listId);
-  if (!list || list.is_quick_list || list.archived_at) return state;
+  if (!list || list.is_quick_list || list.archived_at || list.deleted_at) return state;
   const hasUnfinishedItems = state.items.some((item) =>
-    item.list_id === listId && !['purchased', 'delivered', 'cancelled'].includes(item.status),
+    item.list_id === listId && !item.deleted_at && !['purchased', 'delivered', 'cancelled'].includes(item.status),
   );
   if (hasUnfinishedItems) return state;
   const at = timestamp();
@@ -65,7 +65,7 @@ export function archiveListIfComplete(state: DemoState, listId: string): DemoSta
 
 export function claimItem(state: DemoState, itemId: string, userId: string): { state: DemoState; ok: boolean; message?: string } {
   const item = state.items.find((value) => value.id === itemId);
-  if (!item || item.assigned_to || (item.status !== 'unassigned' && item.status !== 'unavailable')) {
+  if (!item || item.deleted_at || state.lists.find((list) => list.id === item.list_id)?.deleted_at || item.assigned_to || (item.status !== 'unassigned' && item.status !== 'unavailable')) {
     return { state, ok: false, message: 'Selle toote võttis juba teine viija.' };
   }
   const at = timestamp();
@@ -76,7 +76,7 @@ export function claimItem(state: DemoState, itemId: string, userId: string): { s
 
 export function acceptItem(state: DemoState, itemId: string, userId: string): DemoState {
   const item = state.items.find((value) => value.id === itemId);
-  if (!item || item.assigned_to !== userId || item.status !== 'assigned') return state;
+  if (!item || item.deleted_at || item.assigned_to !== userId || item.status !== 'assigned') return state;
   const at = timestamp();
   let next = { ...state, items: state.items.map((value) => value.id === itemId ? { ...value, status: 'accepted' as const, updated_at: at } : value), assignments: state.assignments.map((value) => value.item_id === itemId && value.user_id === userId ? { ...value, status: 'accepted' as const, updated_at: at } : value) };
   return record(next, itemId, userId, 'Võttis ülesande vastu', 'assigned', 'accepted');
@@ -84,7 +84,7 @@ export function acceptItem(state: DemoState, itemId: string, userId: string): De
 
 export function declineItem(state: DemoState, itemId: string, userId: string): DemoState {
   const item = state.items.find((value) => value.id === itemId);
-  if (!item || item.assigned_to !== userId) return state;
+  if (!item || item.deleted_at || item.assigned_to !== userId) return state;
   const at = timestamp();
   const originalList = state.lists.find((value) => value.id === item.list_id);
   const quick = originalList?.is_quick_list ? null : ensureQuickList(state, originalList?.group_id ?? 'family', userId, at);
@@ -96,7 +96,7 @@ export function declineItem(state: DemoState, itemId: string, userId: string): D
 
 export function setItemOutcome(state: DemoState, itemId: string, userId: string, outcome: 'purchased' | 'unavailable' | 'delivered', note?: string): DemoState {
   const item = state.items.find((value) => value.id === itemId);
-  if (!item || item.assigned_to !== userId) return state;
+  if (!item || item.deleted_at || item.assigned_to !== userId) return state;
   const at = timestamp();
   const assigned_to = outcome === 'unavailable' ? undefined : userId;
   const status: ItemStatus = outcome === 'unavailable' ? 'unassigned' : outcome;
@@ -122,7 +122,7 @@ export function statusForAssignment(assignedTo?: string): ItemStatus {
 export function assignedItemsForUser(state: DemoState, userId?: string) {
   if (!userId) return [];
   return state.items.filter((item) =>
-    item.assigned_to === userId && ['assigned', 'accepted', 'purchased'].includes(item.status),
+    !item.deleted_at && !state.lists.find((list) => list.id === item.list_id)?.deleted_at && item.assigned_to === userId && ['assigned', 'accepted', 'purchased'].includes(item.status),
   );
 }
 
@@ -203,7 +203,7 @@ export function saveDeliveryInDemo(state: DemoState, listId: string, userId: str
   const at = timestamp(); const previous = state.deliveries.find((value) => value.list_id === listId && value.courier_id === userId);
   const delivery: Delivery = { ...input, id: previous?.id ?? uid(), list_id: listId, created_by: previous?.created_by ?? userId, courier_id: userId, status: delivered ? 'delivered' : 'planned', created_at: previous?.created_at ?? at, updated_at: at };
   const list = state.lists.find((value) => value.id === listId); const actor = profileName(state, userId);
-  const purchased = delivered ? state.items.filter((item) => item.list_id === listId && item.assigned_to === userId && item.status === 'purchased') : [];
+  const purchased = delivered ? state.items.filter((item) => !item.deleted_at && item.list_id === listId && item.assigned_to === userId && item.status === 'purchased') : [];
   const notification = delivered && list && list.created_by !== userId ? { id: uid(), group_id: list.group_id, user_id: list.created_by, actor_id: userId, list_id: listId, type: 'delivery_completed', title: 'Kaubad laevale viidud', body: deliveryCompletedNotification(actor, input.ship_name, input.departure_date, input.departure_time, input.handover_place), created_at: at, updated_at: at } : null;
   const deliveredActivity = purchased.map((item) => ({ id: uid(), group_id: list?.group_id ?? 'family', actor_id: userId, list_id: listId, item_id: item.id, action: 'Märkis kaubad laevale viiduks', previous_status: 'purchased' as const, new_status: 'delivered' as const, created_at: at, updated_at: at }));
   const deliveryItems = purchased.map((item) => ({ id: uid(), delivery_id: delivery.id, item_id: item.id, created_at: at, updated_at: at }));
@@ -211,7 +211,7 @@ export function saveDeliveryInDemo(state: DemoState, listId: string, userId: str
 }
 
 export function releaseAllItems(state: DemoState, userId: string): DemoState {
-  return state.items.filter((item) => item.assigned_to === userId && ['assigned', 'accepted'].includes(item.status))
+  return state.items.filter((item) => !item.deleted_at && item.assigned_to === userId && ['assigned', 'accepted'].includes(item.status))
     .reduce((current, item) => declineItem(current, item.id, userId), state);
 }
 
@@ -219,7 +219,7 @@ export function removeBuyerMember(state: DemoState, profileId: string, actorId: 
   const member = state.groupMembers.find((value) => value.profile_id === profileId);
   if (!member || member.role !== 'buyer') return state;
 
-  let next = state.items.filter((item) => item.assigned_to === profileId && ['assigned', 'accepted'].includes(item.status))
+  let next = state.items.filter((item) => !item.deleted_at && item.assigned_to === profileId && ['assigned', 'accepted'].includes(item.status))
     .reduce((current, item) => {
       const at = timestamp();
       let released: DemoState = {

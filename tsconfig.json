@@ -19,6 +19,7 @@
   ],
   "exclude": [
     "work",
+    "supabase/functions",
     "src/components/animated-icon*",
     "src/components/app-tabs*",
     "src/components/external-link.tsx",

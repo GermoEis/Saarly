@@ -1,6 +1,7 @@
 {
   "name": "Saarly",
   "short_name": "Saarly",
+  "id": "/",
   "description": "Ühised ostunimekirjad ja kaupade laevale toimetamine.",
   "start_url": "/",
   "display": "standalone",

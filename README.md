@@ -9,6 +9,7 @@ Saarly on väikese privaatse grupi ühine ostu- ja kohaletoimetamise rakendus. K
 - privaatsed grupid, kutsed ja ühe konto kuulumine mitmesse gruppi;
 - ühised ostunimekirjad, kategooriad ja reaalajas uuenev Jooksev list;
 - toodete määramine, fotod, ostuolekud ja tegevusajalugu;
+- varem lisatud toodete soovitused, 10-sekundiline tagasivõtmine ja 30 päeva prügikast demorežiimis;
 - laeva ning kauba üleandmise info;
 - grupisisesed märkmed, teavitused ja privaatsed arveldused;
 - hele ja tume režiim ning telefonile ja arvutile kohanduv kasutajaliides;
@@ -46,6 +47,9 @@ Pärisrežiimis saab uus kasutaja luua konto nime, e-posti ja vähemalt 8-märgi
 6. Ava kaks brauseriakent eri kasutajatega ja kontrolli reaalajas sünkroonimist.
 7. Sisene **Kasutaja C** rollis ja ava kasutajate seaded. Muuda grupi nime, sisesta kutsutava nimi ning jaga ühekordset kutset. Kutsutu lisatakse liikmeks alles siis, kui ta logib oma kontoga sisse ja lunastab kutsekoodi. Kasutaja C saab liikme ka eemaldada; tema pooleliolevad tooted liiguvad tagasi „Jooksvasse listi“.
 8. Ava nimekirjade avalehelt **Arveldused**. Lisa summa teisele grupiliikmele ja soovi korral selgitus. Võlgnik saab märkida summa makstuks ning raha saaja kinnitab laekumise; raha saaja võib avatud arvelduse ka kohe ise nupuga **Märgi tasutuks** lõpetada. Kuupäeva ei sisestata. Arveldust näevad ainult selle kaks osapoolt, mitte teised grupiliikmed ega osapooleks mitteolev administraator.
+9. Ava uue toote vorm ja kirjuta näiteks **Pii**. Vali pakutud „Piim“ ning muuda enne lisamist vabalt nime, kogust, ühikut, märkust või kategooriat.
+10. Märgi toode ostetuks või nimekiri arhiveerituks ja kasuta 10 sekundi jooksul ekraani all olevat nuppu **Võta tagasi**. Kustutatud tooted ja nimekirjad leiad vaate **Arhiiv → Prügikast** kaudu ning saad need 30 päeva jooksul taastada.
+11. Vaates **Kasutajad ja seaded → Telefoniteavitused** saad anda veebiteavituste loa ning saata prooviteavituse. Pärisrežiimis salvestatakse selle seadme veebipushi tellimus Supabase’i ja server saadab uue rakendusesisese teavituse ka suletud PWA-le. iPhone’is lisa Saarly esmalt avakuvale, ava Saarly ikoonist ning vajuta loa nuppu.
 
 Toote kaardile vajutamine avab detaili koos foto, muutmise, määramise, kategooriasse liigutamise ja tegevusajalooga. Foto saab valida või teha juba uue toote vormis ning iga foto salvestatakse püsivalt oma toote külge. Kõik grupiliikmed saavad kategooriaid ümber nimetada ning üles/alla liigutada. Kustutamine ja arhiveerimine küsivad kinnitust. Administraatori eriõigus on piiratud grupi nime, kutsete ja liikmete haldamisega.
 

@@ -149,6 +149,8 @@ export class SupabaseRepository {
 
   async loadWorkspace(groupId: string): Promise<Partial<DemoState>> {
     const client = this.client();
+    const { error: purgeError } = await client.rpc('purge_group_trash', { target_group: groupId });
+    if (purgeError && !purgeError.message.includes('Could not find the function')) throw purgeError;
     const [profiles, groups, members, lists, categories, templates, items, assignments, attempts, deliveries, deliveryItems, notes, notifications, activity, images, settlements] = await Promise.all([
       client.from('profiles').select('*'), client.from('groups').select('*').eq('id', groupId),
       client.from('group_members').select('*').eq('group_id', groupId),
@@ -214,7 +216,9 @@ export class SupabaseRepository {
   }
   async updateList(id: string, name: string, description?: string) { const { error } = await this.client().from('shopping_lists').update({ name, description: description ?? null }).eq('id', id); if (error) throw error; }
   async archiveList(id: string) { const { error } = await this.client().from('shopping_lists').update({ archived_at: new Date().toISOString() }).eq('id', id); if (error) throw error; }
-  async deleteList(id: string) { const { error } = await this.client().rpc('delete_shopping_list_preserving_floating', { target_list: id }); if (error) throw error; }
+  async unarchiveList(id: string) { const { error } = await this.client().rpc('unarchive_shopping_list', { target_list: id }); if (error) throw error; }
+  async deleteList(id: string) { const { error } = await this.client().rpc('trash_shopping_list', { target_list: id }); if (error) throw error; }
+  async restoreList(id: string) { const { error } = await this.client().rpc('restore_trashed_shopping_list', { target_list: id }); if (error) throw error; }
   async createCategory(listId: string, groupId: string, userId: string, name: string, sortOrder: number) { const { error } = await this.client().from('categories').insert({ list_id: listId, name, sort_order: sortOrder }); if (error) throw error; const { error: templateError } = await this.client().from('category_templates').upsert({ group_id: groupId, created_by: userId, name, sort_order: sortOrder }, { onConflict: 'group_id,name', ignoreDuplicates: true }); if (templateError) throw templateError; }
   async updateCategory(id: string, values: Record<string, unknown>) { const { error } = await this.client().from('categories').update(values).eq('id', id); if (error) throw error; }
   async createItem(values: Record<string, unknown>) { const { data, error } = await this.client().from('items').insert(values).select('id').single(); if (error) throw error; return data.id as string; }
@@ -223,7 +227,9 @@ export class SupabaseRepository {
     if (error) throw error; return data as string;
   }
   async updateItem(id: string, values: Record<string, unknown>) { const { error } = await this.client().from('items').update(values).eq('id', id); if (error) throw error; }
-  async deleteItem(id: string) { const { error } = await this.client().from('items').delete().eq('id', id); if (error) throw error; }
+  async deleteItem(id: string) { const { error } = await this.client().rpc('trash_item', { target_item: id }); if (error) throw error; }
+  async restoreItem(id: string) { const { error } = await this.client().rpc('restore_trashed_item', { target_item: id }); if (error) throw error; }
+  async undoItemStatus(id: string, previousStatus: 'assigned' | 'accepted' | 'purchased') { const { error } = await this.client().rpc('undo_item_status', { target_item: id, previous_status: previousStatus }); if (error) throw error; }
   async createNote(values: Record<string, unknown>) { const { error } = await this.client().from('notes').insert(values); if (error) throw error; }
   async updateNote(id: string, values: Record<string, unknown>) { const { error } = await this.client().from('notes').update(values).eq('id', id); if (error) throw error; }
   async deleteNote(id: string) { const { error } = await this.client().from('notes').delete().eq('id', id); if (error) throw error; }
@@ -242,8 +248,10 @@ export class SupabaseRepository {
   async confirmSettlementPaid(id: string) { const { data, error } = await this.client().rpc('confirm_settlement_paid', { target_settlement: id }); if (error) throw this.settlementError(error.message); return data; }
   async cancelSettlement(id: string) { const { data, error } = await this.client().rpc('cancel_settlement', { target_settlement: id }); if (error) throw this.settlementError(error.message); return data; }
   async markNotificationsRead(userId: string) { const { error } = await this.client().from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).is('read_at', null); if (error) throw error; }
+  async saveWebPushSubscription(userId: string, subscription: PushSubscription) { const { error } = await this.client().from('push_tokens').upsert({ user_id: userId, token: JSON.stringify(subscription.toJSON()), platform: 'web' }, { onConflict: 'token' }); if (error) throw error; }
   async upsertDelivery(values: Record<string, unknown>) { const { error } = await this.client().from('deliveries').upsert(values, { onConflict: 'id' }); if (error) throw error; }
-  async completeDelivery(values: Record<string, unknown>) { const { error } = await this.client().rpc('complete_delivery', { target_list: values.target_list, target_delivery: values.delivery_id ?? null, delivery_ship: values.ship_name, delivery_date: values.departure_date, delivery_time: values.departure_time ?? null, delivery_port: values.port, delivery_place: values.handover_place, delivery_note: values.note ?? null }); if (error) throw error; }
+  async completeDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().rpc('complete_delivery', { target_list: values.target_list, target_delivery: values.delivery_id ?? null, delivery_ship: values.ship_name, delivery_date: values.departure_date, delivery_time: values.departure_time ?? null, delivery_port: values.port, delivery_place: values.handover_place, delivery_note: values.note ?? null }); if (error) throw error; return data; }
+  async undoCompletedDelivery(id: string) { const { error } = await this.client().rpc('undo_completed_delivery', { target_delivery: id }); if (error) throw error; }
   subscribe(groupId: string, refresh: () => void) {
     const channel = this.client().channel(`saarly:${groupId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'groups', filter: `id=eq.${groupId}` }, refresh)
