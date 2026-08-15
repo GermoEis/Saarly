@@ -27,5 +27,6 @@ export default function AppLayout() {
     <Tabs.Screen name="archived" options={{ href: null }} />
     <Tabs.Screen name="settlements" options={{ href: null, title: 'Arveldused' }} />
     <Tabs.Screen name="trash" options={{ href: null, title: 'Prügikast' }} />
+    <Tabs.Screen name="statistics" options={{ href: null, title: 'Statistika' }} />
   </Tabs>;
 }

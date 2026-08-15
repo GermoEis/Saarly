@@ -8,8 +8,35 @@ import { cancelSettlementInDemo, confirmSettlementPaidInDemo, createSettlementIn
 import { sortItems } from '../src/data/itemSorting';
 import { frequentItemSuggestions } from '../src/data/frequentItems';
 import { moveItemToTrash, moveListToTrash, purgeExpiredTrash, restoreItemFromTrash, restoreListFromTrash } from '../src/data/trash';
+import { combinedQuantity, findActiveDuplicate, findFloatingDuplicate, normalizeProductName } from '../src/data/duplicates';
+import { groupStatistics } from '../src/data/statistics';
+import { applyOfflinePurchase } from '../src/data/offlineQueue';
 
 describe('Saarly põhivood', () => {
+  it('topelttoote nimi tuvastatakse sõltumata suur- ja väiketähtedest ning tühikutest', () => {
+    const state = createDemoState();
+    expect(normalizeProductName('  PIIM   ')).toBe('piim');
+    expect(findActiveDuplicate(state, 'aug12', ' piim ')?.id).toBe('milk');
+    expect(combinedQuantity(2, 3)).toBe(5);
+  });
+  it('jooksva listi topelthoiatus arvestab ka teisest nimekirjast vabastatud toodet', () => {
+    const state = setItemOutcome(createDemoState(), 'bread', 'user-b', 'unavailable');
+    expect(findFloatingDuplicate(state, 'SAI')?.id).toBe('bread');
+  });
+  it('võrguühenduseta ost salvestab ostetud oleku kohalikku koopiasse', () => {
+    const state = createDemoState();
+    const changed = applyOfflinePurchase(state, 'bread', '2026-08-15T12:00:00Z');
+    expect(changed.items.find((item) => item.id === 'bread')).toMatchObject({ status: 'purchased', assigned_to: 'user-b', updated_at: '2026-08-15T12:00:00Z' });
+    expect(state.items.find((item) => item.id === 'bread')?.status).toBe('accepted');
+  });
+  it('statistika koondab ostetud tooted, ostjad ja tasumata arveldused', () => {
+    const statistics = groupStatistics(createDemoState());
+    expect(statistics.completedItems).toBeGreaterThan(0);
+    expect(statistics.frequentProducts.length).toBeGreaterThan(0);
+    expect(statistics.activeBuyers.length).toBeGreaterThan(0);
+    expect(statistics.unpaidSettlements).toBeGreaterThan(0);
+    expect(statistics.unpaidAmount).toBeGreaterThan(0);
+  });
   it('sageli ostetud toode kasutab viimase lisamise muudetavaid väärtusi', () => {
     const state = createDemoState();
     const previousMilk = state.items.find((item) => item.id === 'milk')!;

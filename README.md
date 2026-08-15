@@ -9,7 +9,9 @@ Saarly on väikese privaatse grupi ühine ostu- ja kohaletoimetamise rakendus. K
 - privaatsed grupid, kutsed ja ühe konto kuulumine mitmesse gruppi;
 - ühised ostunimekirjad, kategooriad ja reaalajas uuenev Jooksev list;
 - toodete määramine, fotod, ostuolekud ja tegevusajalugu;
-- varem lisatud toodete soovitused, 10-sekundiline tagasivõtmine ja 30 päeva prügikast demorežiimis;
+- varem lisatud toodete soovitused, topelttoote hoiatus, 10-sekundiline tagasivõtmine ja 30 päeva prügikast demorežiimis;
+- ostetuks märkimine võrguühenduseta koos automaatse sünkroonimisega ühenduse taastudes;
+- seadete alla paigutatud statistika sagedaste toodete, aktiivsete ostjate ja tasumata arvelduste kohta;
 - laeva ning kauba üleandmise info;
 - grupisisesed märkmed, teavitused ja privaatsed arveldused;
 - hele ja tume režiim ning telefonile ja arvutile kohanduv kasutajaliides;
@@ -50,6 +52,10 @@ Pärisrežiimis saab uus kasutaja luua konto nime, e-posti ja vähemalt 8-märgi
 9. Ava uue toote vorm ja kirjuta näiteks **Pii**. Vali pakutud „Piim“ ning muuda enne lisamist vabalt nime, kogust, ühikut, märkust või kategooriat.
 10. Märgi toode ostetuks või nimekiri arhiveerituks ja kasuta 10 sekundi jooksul ekraani all olevat nuppu **Võta tagasi**. Kustutatud tooted ja nimekirjad leiad vaate **Arhiiv → Prügikast** kaudu ning saad need 30 päeva jooksul taastada.
 11. Vaates **Kasutajad ja seaded → Telefoniteavitused** saad anda veebiteavituste loa ning saata prooviteavituse. Pärisrežiimis salvestatakse selle seadme veebipushi tellimus Supabase’i ja server saadab uue rakendusesisese teavituse ka suletud PWA-le. iPhone’is lisa Saarly esmalt avakuvale, ava Saarly ikoonist ning vajuta loa nuppu.
+12. Sisesta uue tootena olemasoleva toote täpne nimi, näiteks **Piim**. Saarly pakub olemasoleva koguse suurendamist, kuid lubab vajadusel lisada ka eraldi rea.
+13. Statistika ei võta avalehel ruumi: selle leiad seadete kõige alumisest nupust **Vaata statistikat**.
+
+Pärisrežiimis saab juba laaditud nimekirju vaadata ka kehva ühendusega ning varem avatud PWA käivitub vahemälust. Kui vajutad võrguühenduseta määratud tootel **Ostetud**, salvestatakse muudatus seadmesse ja saadetakse Supabase’i automaatselt pärast interneti taastumist. Ootel muudatuste arvu näitab ekraani ülaosas ühenduse teade.
 
 Toote kaardile vajutamine avab detaili koos foto, muutmise, määramise, kategooriasse liigutamise ja tegevusajalooga. Foto saab valida või teha juba uue toote vormis ning iga foto salvestatakse püsivalt oma toote külge. Kõik grupiliikmed saavad kategooriaid ümber nimetada ning üles/alla liigutada. Kustutamine ja arhiveerimine küsivad kinnitust. Administraatori eriõigus on piiratud grupi nime, kutsete ja liikmete haldamisega.
 

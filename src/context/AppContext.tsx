@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Platform } from 'react-native';
+import * as Network from 'expo-network';
 import { createDemoState } from '@/data/demoSeed';
 import { acceptItem, categoriesForNewList, claimItem, declineItem, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '@/data/business';
 import { loadDemo, saveDemo } from '@/data/storage';
@@ -12,6 +13,8 @@ import { moveItemToTrash, moveListToTrash, purgeExpiredTrash, restoreItemFromTra
 import { Category, Delivery, DemoState, GroupInvite, GroupMembership, Item, Note, Settlement, ThemeMode } from '@/types/domain';
 import { colorsFor, ThemeColors } from '@/theme';
 import { requestWebNotificationPermission, showDemoWebNotification, subscribeToWebPush, WebNotificationPermission } from '@/services/webPush';
+import { applyOfflinePurchase, CloudWorkspaceCache, loadCloudWorkspaceCache, loadOfflineActions, OfflinePurchaseAction, saveCloudWorkspaceCache, saveOfflineActions } from '@/data/offlineQueue';
+import { combinedQuantity } from '@/data/duplicates';
 
 type NewItem = Pick<Item, 'name' | 'quantity' | 'category_id'> & Partial<Pick<Item, 'unit' | 'note' | 'assigned_to'>>;
 type NewItemPhoto = { uri: string; mimeType?: string | null; base64?: string | null };
@@ -34,6 +37,8 @@ interface AppContextValue {
   themeMode: ThemeMode;
   themeColors: ThemeColors;
   pendingUndo: { id: string; message: string; expiresAt: number } | null;
+  isOnline: boolean | null;
+  pendingOfflineActions: number;
   undoLastAction: () => void;
   enableWebNotifications: () => Promise<WebNotificationPermission>;
   setThemeMode: (theme: ThemeMode) => Promise<void>;
@@ -67,6 +72,7 @@ interface AppContextValue {
   reorderCategory: (id: string, direction: -1 | 1) => void;
   addItem: (listId: string, input: NewItem, photo?: NewItemPhoto) => Promise<boolean>;
   addQuickItem: (input: Pick<Item, 'name' | 'quantity'> & Partial<Pick<Item, 'unit' | 'note'>>, photo?: NewItemPhoto) => Promise<boolean>;
+  increaseItemQuantity: (itemId: string, addition: number) => Promise<boolean>;
   updateItem: (id: string, values: Partial<Pick<Item, 'name' | 'quantity' | 'unit' | 'note' | 'category_id' | 'assigned_to'>>) => void;
   deleteItem: (id: string) => void;
   restoreItem: (id: string) => void;
@@ -96,6 +102,9 @@ function accountFromUser(user: { email?: string | null; is_anonymous?: boolean; 
   return { email: user.email ?? undefined, displayName: metadataName, isAnonymous: Boolean(user.is_anonymous) };
 }
 
+const networkAvailable = (network: Network.NetworkState) => network.isConnected !== false && network.isInternetReachable !== false;
+const isNetworkFailure = (reason: unknown) => /network|fetch|internet|offline|ühendus/i.test(reason instanceof Error ? reason.message : String(reason));
+
 async function photoBytes(photo: NewItemPhoto) {
   if (photo.base64) {
     const binary = atob(photo.base64);
@@ -116,6 +125,8 @@ export function AppProvider({ children }: React.PropsWithChildren) {
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [groupInvites, setGroupInvites] = useState<GroupInvite[]>([]);
   const [pendingUndo, setPendingUndo] = useState<{ id: string; message: string; expiresAt: number } | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean | null>(null);
+  const [pendingOfflineActions, setPendingOfflineActions] = useState(0);
   const channel = useRef<BroadcastChannel | null>(null);
   const cloudGroupId = useRef<string | null>(null);
   const cloudUserId = useRef<string | null>(null);
@@ -127,6 +138,9 @@ export function AppProvider({ children }: React.PropsWithChildren) {
   const notificationUser = useRef<string | null>(null);
   const seenSystemNotifications = useRef<Set<string>>(new Set());
   const refreshCloudRef = useRef<(userId?: string, preferredGroupId?: string | null) => Promise<void>>(async () => undefined);
+  const stateRef = useRef(state);
+  const offlineActionsRef = useRef<OfflinePurchaseAction[]>([]);
+  const flushingOffline = useRef(false);
 
   const refreshCloud = useCallback(async (userId?: string, preferredGroupId?: string | null) => {
     const activeUser = userId ?? cloudUserId.current; if (!activeUser) return;
@@ -140,7 +154,9 @@ export function AppProvider({ children }: React.PropsWithChildren) {
       cloudUnsubscribe.current?.(); cloudUnsubscribe.current = null;
       cloudGroupId.current = null; setActiveGroupId(null); setGroupInvites([]);
       await saveActiveGroupId(activeUser, null);
-      setState({ ...createDemoState(), currentUserId: activeUser, profiles: [], groups: [], groupMembers: [], lists: [], categories: [], categoryTemplates: [], items: [], assignments: [], attempts: [], deliveries: [], deliveryItems: [], notes: [], notifications: [], activity: [], images: [], settlements: [] });
+      const emptyState = { ...createDemoState(), currentUserId: activeUser, profiles: [], groups: [], groupMembers: [], lists: [], categories: [], categoryTemplates: [], items: [], assignments: [], attempts: [], deliveries: [], deliveryItems: [], notes: [], notifications: [], activity: [], images: [], settlements: [] };
+      stateRef.current = emptyState; setState(emptyState);
+      await saveCloudWorkspaceCache({ userId: activeUser, activeGroupId: null, groups, invites: [], state: emptyState, savedAt: now() });
       return;
     }
     const data = await cloud.loadWorkspace(groupId);
@@ -153,13 +169,39 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     }
     cloudGroupId.current = groupId; setActiveGroupId(groupId); setGroupInvites(invites);
     await saveActiveGroupId(activeUser, groupId);
-    setState({ ...createDemoState(), ...data, currentUserId: activeUser });
+    const nextState = { ...createDemoState(), ...data, currentUserId: activeUser };
+    stateRef.current = nextState; setState(nextState);
+    await saveCloudWorkspaceCache({ userId: activeUser, activeGroupId: groupId, groups, invites, state: nextState, savedAt: now() });
   }, []);
   useEffect(() => { refreshCloudRef.current = refreshCloud; }, [refreshCloud]);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
+  useEffect(() => {
+    let active = true;
+    void Network.getNetworkStateAsync().then((value) => { if (active) setIsOnline(networkAvailable(value)); }).catch(() => undefined);
+    const subscription = Network.addNetworkStateListener((value) => { if (active) setIsOnline(networkAvailable(value)); });
+    return () => { active = false; subscription.remove(); };
+  }, []);
 
   useEffect(() => {
     if (hasSupabaseConfig && supabase) {
-      supabase.auth.getSession().then(async ({ data }) => { const user = data.session?.user; setAuthAccount(accountFromUser(user)); if (user) { cloudUserId.current = user.id; await refreshCloud(user.id); } setReady(true); }).catch(() => setReady(true));
+      supabase.auth.getSession().then(async ({ data }) => {
+        const user = data.session?.user; setAuthAccount(accountFromUser(user));
+        if (user) {
+          cloudUserId.current = user.id;
+          offlineActionsRef.current = (await loadOfflineActions()).filter((action) => action.userId === user.id);
+          setPendingOfflineActions(offlineActionsRef.current.length);
+          try { await refreshCloud(user.id); }
+          catch {
+            const cached = await loadCloudWorkspaceCache(user.id);
+            if (cached) {
+              setAvailableGroups(cached.groups); setActiveGroupId(cached.activeGroupId); setGroupInvites(cached.invites);
+              cloudGroupId.current = cached.activeGroupId; stateRef.current = cached.state; setState(cached.state);
+            }
+          }
+        }
+        setReady(true);
+      }).catch(() => setReady(true));
       const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
         // Algse seansi laadib ülal olev getSession. Sama töö teist korda käivitamine
         // võis Google OAuthi järel kuvada hetkeks eksliku „Vali, kuidas jätkata“ vaate.
@@ -167,7 +209,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
         cloudUserId.current = session?.user.id ?? null;
         setAuthAccount(accountFromUser(session?.user));
         if (!session?.user) {
-          setAvailableGroups([]); setActiveGroupId(null); setGroupInvites([]);
+          setAvailableGroups([]); setActiveGroupId(null); setGroupInvites([]); setPendingOfflineActions(0); offlineActionsRef.current = [];
           setState({ ...createDemoState(), currentUserId: null });
         }
       });
@@ -209,6 +251,14 @@ export function AppProvider({ children }: React.PropsWithChildren) {
       return next;
     });
   }, []);
+
+  const saveOptimisticCloudState = useCallback((nextState: DemoState) => {
+    stateRef.current = nextState; setState(nextState);
+    const userId = cloudUserId.current;
+    if (!userId) return;
+    const cache: CloudWorkspaceCache = { userId, activeGroupId: cloudGroupId.current, groups: availableGroups, invites: groupInvites, state: nextState, savedAt: now() };
+    void saveCloudWorkspaceCache(cache);
+  }, [availableGroups, groupInvites]);
 
   const scheduleUndo = (message: string, cloudAction?: () => Promise<void>) => {
     undoSnapshot.current = cloudAction ? null : undoSnapshot.current;
@@ -322,7 +372,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
       return { ...current, currentUserId: id, profiles: [...current.profiles, { id, display_name: name.trim(), avatar_color: '#176B4D', theme_preference: 'light', created_at: at, updated_at: at }], groupMembers: [...current.groupMembers, { id: uid('member'), group_id: 'family', profile_id: id, role: 'buyer', created_at: at, updated_at: at }] };
     });
   };
-  const signOut = async () => { if (hasSupabaseConfig) { await cloud.signOut(); cloudUnsubscribe.current?.(); cloudUnsubscribe.current = null; cloudUserId.current = null; cloudGroupId.current = null; setAvailableGroups([]); setActiveGroupId(null); setGroupInvites([]); setAuthAccount(null); setState({ ...createDemoState(), currentUserId: null }); } else update((current) => ({ ...current, currentUserId: null })); };
+  const signOut = async () => { if (hasSupabaseConfig) { await cloud.signOut(); cloudUnsubscribe.current?.(); cloudUnsubscribe.current = null; cloudUserId.current = null; cloudGroupId.current = null; offlineActionsRef.current = []; setPendingOfflineActions(0); setAvailableGroups([]); setActiveGroupId(null); setGroupInvites([]); setAuthAccount(null); setState({ ...createDemoState(), currentUserId: null }); } else update((current) => ({ ...current, currentUserId: null })); };
   const resetDemo = () => {
     const fresh = createDemoState();
     undoSnapshot.current = null;
@@ -332,6 +382,51 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     update(() => fresh);
   };
   const show = (message: string) => Platform.OS === 'web' ? window.alert(message) : Alert.alert('Saarly', message);
+
+  const queuePurchasedItem = async (item: Item) => {
+    const userId = cloudUserId.current; const groupId = cloudGroupId.current;
+    if (!userId || !groupId) throw new Error('Ostu ei saanud sellesse seadmesse salvestada.');
+    const previousStatus = item.status === 'assigned' || item.status === 'accepted' || item.status === 'purchased' ? item.status : 'accepted';
+    const action: OfflinePurchaseAction = { id: uid('offline'), type: 'purchase', userId, groupId, itemId: item.id, previousStatus, createdAt: now() };
+    const allActions = await loadOfflineActions();
+    const nextActions = [...allActions.filter((entry) => !(entry.userId === userId && entry.itemId === item.id)), action];
+    await saveOfflineActions(nextActions);
+    offlineActionsRef.current = nextActions.filter((entry) => entry.userId === userId);
+    setPendingOfflineActions(offlineActionsRef.current.length);
+    const optimistic = applyOfflinePurchase(stateRef.current, item.id, now());
+    saveOptimisticCloudState(optimistic);
+    scheduleUndo('Toode märgiti ostetuks ja sünkroonitakse ühenduse taastudes.', async () => {
+      const currentActions = await loadOfflineActions();
+      const remaining = currentActions.filter((entry) => entry.id !== action.id);
+      await saveOfflineActions(remaining);
+      offlineActionsRef.current = remaining.filter((entry) => entry.userId === userId);
+      setPendingOfflineActions(offlineActionsRef.current.length);
+      const restored = { ...stateRef.current, items: stateRef.current.items.map((entry) => entry.id === item.id ? { ...entry, status: previousStatus, updated_at: now() } : entry) };
+      saveOptimisticCloudState(restored);
+    });
+  };
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !ready || isOnline !== true || !cloudUserId.current || !pendingOfflineActions || flushingOffline.current) return;
+    flushingOffline.current = true;
+    void (async () => {
+      const userId = cloudUserId.current!;
+      const allActions = await loadOfflineActions();
+      const mine = allActions.filter((action) => action.userId === userId);
+      const completed = new Set<string>();
+      for (const action of mine) {
+        try { await cloud.setItemStatus(action.itemId, 'purchased'); completed.add(action.id); }
+        catch (reason) { if (isNetworkFailure(reason)) break; }
+      }
+      if (completed.size) {
+        const remaining = allActions.filter((action) => !completed.has(action.id));
+        await saveOfflineActions(remaining);
+        offlineActionsRef.current = remaining.filter((action) => action.userId === userId);
+        setPendingOfflineActions(offlineActionsRef.current.length);
+        await refreshCloud(userId, cloudGroupId.current);
+      }
+    })().catch(() => undefined).finally(() => { flushingOffline.current = false; });
+  }, [isOnline, pendingOfflineActions, ready, refreshCloud]);
   const claim = (itemId: string) => { if (hasSupabaseConfig) { void cloud.claimFloatingItem(itemId).then(() => refreshCloud()).catch((error) => show(error.message)); return; } update((current) => {
     const result = claimItem(current, itemId, current.currentUserId!);
     if (!result.ok) setTimeout(() => show(result.message!), 0);
@@ -340,7 +435,24 @@ export function AppProvider({ children }: React.PropsWithChildren) {
   const accept = (itemId: string) => { if (hasSupabaseConfig) void cloud.respondToAssignment(itemId, true).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => acceptItem(current, itemId, current.currentUserId!)); };
   const decline = (itemId: string) => { if (hasSupabaseConfig) void cloud.respondToAssignment(itemId, false).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => declineItem(current, itemId, current.currentUserId!)); };
   const releaseAll = () => { if (hasSupabaseConfig) { const releasable = state.items.filter((item) => item.assigned_to === state.currentUserId && ['assigned', 'accepted'].includes(item.status)); void Promise.all(releasable.map((item) => cloud.respondToAssignment(item.id, false))).then(() => refreshCloud()).catch((error) => show(error.message)); } else update((current) => releaseAllItems(current, current.currentUserId!)); };
-  const outcome = (itemId: string, value: 'purchased' | 'unavailable' | 'delivered', note?: string) => { if (hasSupabaseConfig) { const item = state.items.find((entry) => entry.id === itemId); const action = value === 'unavailable' ? cloud.markUnavailable(itemId, note) : cloud.setItemStatus(itemId, value); void action.then(async () => { await refreshCloud(); if (value !== 'unavailable' && item) { const previousStatus = item.status === 'assigned' || item.status === 'accepted' || item.status === 'purchased' ? item.status : 'accepted'; scheduleUndo(value === 'purchased' ? 'Toode märgiti ostetuks.' : 'Toode märgiti laevale viiduks.', async () => { await cloud.undoItemStatus(itemId, previousStatus); await refreshCloud(); }); } }).catch((error) => show(error.message)); } else if (value === 'purchased' || value === 'delivered') updateWithUndo(value === 'purchased' ? 'Toode märgiti ostetuks.' : 'Toode märgiti laevale viiduks.', (current) => setItemOutcome(current, itemId, current.currentUserId!, value, note)); else update((current) => setItemOutcome(current, itemId, current.currentUserId!, value, note)); };
+  const outcome = (itemId: string, value: 'purchased' | 'unavailable' | 'delivered', note?: string) => {
+    if (hasSupabaseConfig) {
+      const item = stateRef.current.items.find((entry) => entry.id === itemId);
+      if (value === 'purchased' && item && isOnline === false) { void queuePurchasedItem(item).catch((error) => show(error.message)); return; }
+      const action = value === 'unavailable' ? cloud.markUnavailable(itemId, note) : cloud.setItemStatus(itemId, value);
+      void action.then(async () => {
+        await refreshCloud();
+        if (value !== 'unavailable' && item) {
+          const previousStatus = item.status === 'assigned' || item.status === 'accepted' || item.status === 'purchased' ? item.status : 'accepted';
+          scheduleUndo(value === 'purchased' ? 'Toode märgiti ostetuks.' : 'Toode märgiti laevale viiduks.', async () => { await cloud.undoItemStatus(itemId, previousStatus); await refreshCloud(); });
+        }
+      }).catch((error) => {
+        if (value === 'purchased' && item && isNetworkFailure(error)) void queuePurchasedItem(item).catch((reason) => show(reason.message));
+        else show(error.message);
+      });
+    } else if (value === 'purchased' || value === 'delivered') updateWithUndo(value === 'purchased' ? 'Toode märgiti ostetuks.' : 'Toode märgiti laevale viiduks.', (current) => setItemOutcome(current, itemId, current.currentUserId!, value, note));
+    else update((current) => setItemOutcome(current, itemId, current.currentUserId!, value, note));
+  };
 
   const addList = async (name: string, description?: string) => {
     if (hasSupabaseConfig) { const id = await cloud.createList(cloudGroupId.current!, state.currentUserId!, name, description); await refreshCloud(); return id; }
@@ -425,6 +537,16 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     const image = photo ? { id: uid('image'), item_id: id, created_by: current.currentUserId!, storage_path: `demo/${id}/${Date.now()}`, preview_uri: previewUri, created_at: at, updated_at: at } : null;
     return { ...current, lists: existingList ? current.lists : [...current.lists, list], categories: existingCategory ? current.categories : [...current.categories, category], items: [...current.items, item], activity: [...current.activity, activity], images: image ? [...current.images, image] : current.images };
   }); return true; };
+  const increaseItemQuantity = async (itemId: string, addition: number) => {
+    const item = stateRef.current.items.find((value) => value.id === itemId && !value.deleted_at);
+    if (!item) { show('Olemasolevat toodet ei leitud.'); return false; }
+    const quantity = combinedQuantity(item.quantity, addition);
+    try {
+      if (hasSupabaseConfig) { await cloud.updateItem(itemId, { quantity }); await refreshCloud(); }
+      else update((current) => ({ ...current, items: current.items.map((value) => value.id === itemId ? { ...value, quantity, updated_at: now() } : value) }));
+      return true;
+    } catch (error) { show(error instanceof Error ? error.message : 'Koguse suurendamine ebaõnnestus.'); return false; }
+  };
   const deleteItem = (id: string) => { if (hasSupabaseConfig) void cloud.deleteItem(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => moveItemToTrash(current, id)); };
   const restoreItem = (id: string) => { if (hasSupabaseConfig) void cloud.restoreItem(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => restoreItemFromTrash(current, id)); };
   const updateItem = (id: string, values: Partial<Pick<Item, 'name' | 'quantity' | 'unit' | 'note' | 'category_id' | 'assigned_to'>>) => { if (hasSupabaseConfig) { const current = state.items.find((value) => value.id === id); const assignmentChanged = Object.prototype.hasOwnProperty.call(values, 'assigned_to') && values.assigned_to !== current?.assigned_to; void cloud.updateItem(id, { ...values, ...(assignmentChanged ? { status: statusForAssignment(values.assigned_to) } : {}) }).then(() => refreshCloud()).catch((error) => show(error.message)); return; } update((current) => {
@@ -492,7 +614,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
   const isCreator = canManageShoppingContent(state, state.currentUserId);
   const isAdmin = state.groupMembers.some((member) => member.profile_id === state.currentUserId && member.role === 'admin');
   const demoGroups: GroupMembership[] = state.groups.map((group) => ({ ...group, role: state.groupMembers.find((member) => member.group_id === group.id && member.profile_id === state.currentUserId)?.role ?? 'buyer' }));
-  const value: AppContextValue = { state, mode: hasSupabaseConfig ? 'supabase' : 'demo', ready, currentUser, isMember, isCreator, isAdmin, hasAuthSession: Boolean(authAccount), authEmail: authAccount?.email, authDisplayName: authAccount?.displayName, isAnonymousAccount: Boolean(authAccount?.isAnonymous), availableGroups: hasSupabaseConfig ? availableGroups : demoGroups, activeGroupId: hasSupabaseConfig ? activeGroupId : (state.groups[0]?.id ?? null), groupInvites, themeMode, themeColors, pendingUndo, undoLastAction, enableWebNotifications, setThemeMode, renameGroup, removeMember, createGroup, switchGroup, createInvite, revokeInvite, signIn, signInEmail, registerEmail, linkEmailAccount, signInGoogle, joinGroup, signOut, resetDemo, claim, accept, decline, releaseAll, outcome, addList, updateList, archiveList, deleteList, restoreList, addCategory, toggleCategory, renameCategory, reorderCategory, addItem, addQuickItem, updateItem, deleteItem, restoreItem, markAllRead, addNote, updateNote, deleteNote, setItemImage, removeItemImage, saveDelivery, createSettlement, markSettlementPaid, confirmSettlementPaid, cancelSettlement };
+  const value: AppContextValue = { state, mode: hasSupabaseConfig ? 'supabase' : 'demo', ready, currentUser, isMember, isCreator, isAdmin, hasAuthSession: Boolean(authAccount), authEmail: authAccount?.email, authDisplayName: authAccount?.displayName, isAnonymousAccount: Boolean(authAccount?.isAnonymous), availableGroups: hasSupabaseConfig ? availableGroups : demoGroups, activeGroupId: hasSupabaseConfig ? activeGroupId : (state.groups[0]?.id ?? null), groupInvites, themeMode, themeColors, pendingUndo, isOnline, pendingOfflineActions, undoLastAction, enableWebNotifications, setThemeMode, renameGroup, removeMember, createGroup, switchGroup, createInvite, revokeInvite, signIn, signInEmail, registerEmail, linkEmailAccount, signInGoogle, joinGroup, signOut, resetDemo, claim, accept, decline, releaseAll, outcome, addList, updateList, archiveList, deleteList, restoreList, addCategory, toggleCategory, renameCategory, reorderCategory, addItem, addQuickItem, increaseItemQuantity, updateItem, deleteItem, restoreItem, markAllRead, addNote, updateNote, deleteNote, setItemImage, removeItemImage, saveDelivery, createSettlement, markSettlementPaid, confirmSettlementPaid, cancelSettlement };
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { AppProvider, useApp } from '@/context/AppContext';
 import { UndoNotice } from '@/components/UndoNotice';
+import { OfflineNotice } from '@/components/OfflineNotice';
 import { registerSaarlyServiceWorker } from '@/services/webPush';
 
 export default function RootLayout() {
@@ -32,6 +33,7 @@ function ThemedRoot() {
     </Head>
     <StatusBar style={app.themeMode === 'dark' ? 'light' : 'dark'} />
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: app.themeColors.background } }} />
+    <OfflineNotice />
     <UndoNotice />
   </>;
 }

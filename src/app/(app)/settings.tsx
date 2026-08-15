@@ -179,6 +179,7 @@ function SettingsContent() {
       <Button label="Taasta näidisandmed" icon="↻" variant="danger" onPress={app.resetDemo} />
       <Button label="Logi välja" variant="ghost" onPress={() => { void app.signOut(); router.replace('/'); }} />
     </Card> : null}
+    <View style={styles.secondaryLinks}><Button label="Vaata statistikat" icon="↗" variant="ghost" onPress={() => router.push('/(app)/statistics' as never)} /></View>
   </Page>;
 }
 
@@ -207,4 +208,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   accountError: { color: colors.danger, backgroundColor: colors.dangerSoft, borderWidth: 1, borderColor: colors.dangerBorder, padding: 12, borderRadius: 10, fontSize: 15, lineHeight: 22, fontWeight: '700' },
   progress: { color: colors.muted, fontSize: 15, lineHeight: 22, fontWeight: '700', textAlign: 'center' },
   success: { color: colors.primaryDark, backgroundColor: colors.primarySoft, padding: 12, borderRadius: 10, fontSize: 15, lineHeight: 22, fontWeight: '700' },
+  secondaryLinks: { alignItems: 'center', opacity: .86 },
 });
