@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '@/context/AppContext';
 import { ThemeColors } from '@/theme';
 import { Button, Field, Sheet } from './ui';
+import { DeparturePicker } from './DeparturePicker';
+import { departureTime, isActiveShipment, isFutureDeparture } from '@/data/departures';
 
 export function DeliveryFormSheet({ listId, onClose }: { listId: string | null; onClose: () => void }) {
   if (!listId) return null;
@@ -11,26 +13,25 @@ export function DeliveryFormSheet({ listId, onClose }: { listId: string | null; 
 
 function DeliveryForm({ listId, onClose }: { listId: string; onClose: () => void }) {
   const app = useApp();
-  const existing = app.state.deliveries.find((delivery) => delivery.list_id === listId && delivery.courier_id === app.currentUser?.id);
-  const [ship, setShip] = useState(existing?.ship_name ?? 'Baltic Queen'); const [date, setDate] = useState(existing?.departure_date ?? new Date().toISOString().slice(0, 10)); const [time, setTime] = useState(existing?.departure_time ?? '');
-  const [port, setPort] = useState(existing?.port ?? 'Tallinn'); const [place, setPlace] = useState(existing?.handover_place ?? 'D-terminal'); const [note, setNote] = useState(existing?.note ?? '');
+  const existing = app.state.deliveries.find((delivery) => delivery.list_id === listId && delivery.courier_id === app.currentUser?.id && isActiveShipment(delivery));
+  const [ship, setShip] = useState(existing?.ship_name ?? ''); const [date, setDate] = useState(existing?.departure_date ?? ''); const [time, setTime] = useState(existing ? departureTime(existing.departure_time) : ''); const [saving, setSaving] = useState(false);
+  const port = existing?.port ?? 'Tallinn'; const place = existing?.handover_place ?? 'D-terminal'; const [note, setNote] = useState(existing?.note ?? '');
 
-  const save = () => {
-    if (!listId || !ship.trim() || !date.trim() || !port.trim() || !place.trim()) return;
-    app.saveDelivery(listId, { ship_name: ship.trim(), departure_date: date.trim(), departure_time: time.trim() || undefined, port: port.trim(), handover_place: place.trim(), note: note.trim() || undefined });
-    onClose();
+  const save = async () => {
+    if (!listId || !ship.trim() || !date.trim() || !time.trim() || !isFutureDeparture(date, time)) return;
+    setSaving(true);
+    try {
+      const saved = await app.saveDelivery(listId, { ship_name: ship.trim(), departure_date: date.trim(), departure_time: time.trim(), port: port.trim(), handover_place: place.trim(), note: note.trim() || undefined });
+      if (saved) onClose();
+    } finally { setSaving(false); }
   };
 
   return <Sheet visible title="Määra laev" onClose={onClose}>
-    <Choice label="Varem kasutatud laevad" values={[...new Set(['Baltic Queen', ...app.state.deliveries.map((delivery) => delivery.ship_name)])]} selected={ship} onSelect={setShip} />
+    <Choice label="Varem kasutatud laevad" values={[...new Set(app.state.deliveries.map((delivery) => delivery.ship_name).filter((name) => name.toLocaleLowerCase('et-EE') !== 'baltic queen'))]} selected={ship} onSelect={setShip} />
     <Field label="Laeva nimi" value={ship} onChangeText={setShip} />
-    <Field label="Väljumise kuupäev" value={date} onChangeText={setDate} placeholder="AAAA-KK-PP" />
-    <Field label="Laeva väljumise kellaaeg (valikuline)" value={time} onChangeText={setTime} placeholder="Näiteks 18:00" />
-    <Choice label="Varem kasutatud sadamad" values={[...new Set(['Tallinn', ...app.state.deliveries.map((delivery) => delivery.port)])]} selected={port} onSelect={setPort} />
-    <Field label="Sadam või terminal" value={port} onChangeText={setPort} />
-    <Field label="Üleandmise koht" value={place} onChangeText={setPlace} />
+    <DeparturePicker date={date} time={time} onDateChange={setDate} onTimeChange={setTime} />
     <Field label="Täiendav märkus" value={note} onChangeText={setNote} multiline />
-    <Button label="Salvesta laevainfo" onPress={save} disabled={!ship.trim() || !date.trim() || !port.trim() || !place.trim()} />
+    <Button label={saving ? 'Salvestan…' : 'Salvesta laevainfo'} onPress={() => { void save(); }} disabled={saving || !ship.trim() || !date.trim() || !time.trim() || !isFutureDeparture(date, time)} />
   </Sheet>;
 }
 

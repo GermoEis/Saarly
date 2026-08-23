@@ -16,3 +16,6 @@ supabase/.temp/
 
 expo-env.d.ts
 # @end expo-cli
+
+.dev.vars*
+!.dev.vars.example

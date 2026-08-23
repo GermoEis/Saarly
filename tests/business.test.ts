@@ -11,8 +11,20 @@ import { moveItemToTrash, moveListToTrash, purgeExpiredTrash, restoreItemFromTra
 import { combinedQuantity, findActiveDuplicate, findFloatingDuplicate, normalizeProductName } from '../src/data/duplicates';
 import { groupStatistics } from '../src/data/statistics';
 import { applyOfflinePurchase } from '../src/data/offlineQueue';
+import { departureTimesForDate, isActiveShipment } from '../src/data/departures';
 
 describe('Saarly põhivood', () => {
+  it('laeva saadetis jääb aktiivseks ka siis, kui andmebaas tagastab kellaaja koos sekunditega', () => {
+    expect(isActiveShipment({ departure_date: '2026-08-20', departure_time: '18:00:00', status: 'planned' } as never, new Date('2026-08-20T17:30:00').getTime())).toBe(true);
+  });
+  it('vigase vana kellaajaga planeeritud saadetist ei peideta', () => {
+    expect(isActiveShipment({ departure_date: '2026-08-20', departure_time: 'vigane', status: 'planned' } as never)).toBe(true);
+  });
+  it('tänase päeva kellaajavalik ei paku juba möödunud kellaaegu', () => {
+    const times = departureTimesForDate('2026-08-20', new Date('2026-08-20T13:36:00'));
+    expect(times).toContain('14:00');
+    expect(times).not.toContain('13:30');
+  });
   it('topelttoote nimi tuvastatakse sõltumata suur- ja väiketähtedest ning tühikutest', () => {
     const state = createDemoState();
     expect(normalizeProductName('  PIIM   ')).toBe('piim');
@@ -179,11 +191,21 @@ describe('Saarly põhivood', () => {
     expect(quick ? archiveListIfComplete(state, quick.id) : state).toEqual(state);
   });
   it('kõigi ostetud kaupade laevale viimine muudab tooted ja teavitab koostajat laevainfoga', () => {
-    const purchased = setItemOutcome(createDemoState(), 'bread', 'user-b', 'purchased');
+    const fresh = { ...createDemoState(), deliveries: [], deliveryItems: [] };
+    const purchased = setItemOutcome(fresh, 'bread', 'user-b', 'purchased');
     const completed = saveDeliveryInDemo(purchased, 'aug12', 'user-b', { ship_name: 'Baltic Queen', departure_date: '2026-08-12', departure_time: '18:00', port: 'Tallinn', handover_place: 'D-terminal' }, true);
     expect(completed.items.find((item) => item.id === 'bread')?.status).toBe('delivered');
     expect(completed.deliveries.find((delivery) => delivery.courier_id === 'user-b')?.status).toBe('delivered');
     expect(completed.notifications[0]).toMatchObject({ user_id: 'user-a', type: 'delivery_completed', body: 'Kasutaja B viis kaubad 12.08.2026 kell 18:00 laevale Baltic Queen. Kaubad anti üle D-terminalis.' });
+  });
+  it('uus jooksvast listist viimine säilitab varem lõpetatud saadetise', () => {
+    const fresh = { ...createDemoState(), deliveries: [], deliveryItems: [] };
+    const first = saveDeliveryInDemo(setItemOutcome(fresh, 'bread', 'user-b', 'purchased'), 'aug12', 'user-b', { ship_name: 'Victoria I', departure_date: '2026-08-12', departure_time: '18:00', port: 'Tallinn', handover_place: 'D-terminal' }, true);
+    const bread = first.items.find((item) => item.id === 'bread')!;
+    const nextPurchase = { ...first, items: [...first.items, { ...bread, id: 'bread-again', status: 'purchased' as const, updated_at: '2026-08-13T00:00:00.000Z' }] };
+    const second = saveDeliveryInDemo(nextPurchase, 'aug12', 'user-b', { ship_name: 'Megastar', departure_date: '2026-08-13', departure_time: '10:00', port: 'Tallinn', handover_place: 'D-terminal' }, true);
+    expect(second.deliveries.filter((delivery) => delivery.list_id === 'aug12' && delivery.courier_id === 'user-b').map((delivery) => delivery.ship_name).sort()).toEqual(['Megastar', 'Victoria I']);
+    expect(second.items.find((item) => item.id === 'bread-again')?.status).toBe('delivered');
   });
   it('laevale viimise teavitus töötab ka ilma väljumisajata', () => {
     expect(deliveryCompletedNotification('Kasutaja D', 'Victoria I', '2026-08-12', undefined, 'D-terminal')).toBe('Kasutaja D viis kaubad 12.08.2026 laevale Victoria I. Kaubad anti üle D-terminalis.');
@@ -192,6 +214,17 @@ describe('Saarly põhivood', () => {
     const state = createDemoState(); const before = state.notifications.length;
     const planned = saveDeliveryInDemo(state, 'aug12', 'user-b', { ship_name: 'Baltic Queen', departure_date: '2026-08-12', departure_time: '18:00', port: 'Tallinn', handover_place: 'D-terminal' }, false);
     expect(planned.notifications).toHaveLength(before);
+  });
+  it('laevainfo muutmine hoiab ostetud kauba saadetise küljes ja laevale viimine lõpetab sama saadetise', () => {
+    const purchased = setItemOutcome(createDemoState(), 'bread', 'user-b', 'purchased');
+    const planned = saveDeliveryInDemo(purchased, 'aug12', 'user-b', { ship_name: 'Kalk', departure_date: '2099-08-20', departure_time: '18:00', port: 'Tallinn', handover_place: 'D-terminal' }, false);
+    const plannedId = planned.deliveries.find((delivery) => delivery.ship_name === 'Kalk' && delivery.status === 'planned')!.id;
+    const changed = saveDeliveryInDemo(planned, 'aug12', 'user-b', { ship_name: 'Kalk', departure_date: '2099-08-20', departure_time: '20:00', port: 'Tallinn', handover_place: 'D-terminal' }, false);
+    expect(changed.deliveries.find((delivery) => delivery.id === plannedId)).toMatchObject({ departure_time: '20:00', status: 'planned' });
+    expect(changed.deliveryItems.some((link) => link.delivery_id === plannedId && link.item_id === 'bread')).toBe(true);
+    const completed = saveDeliveryInDemo(changed, 'aug12', 'user-b', { ship_name: 'Kalk', departure_date: '2099-08-20', departure_time: '20:00', port: 'Tallinn', handover_place: 'D-terminal' }, true);
+    expect(completed.deliveries.find((delivery) => delivery.id === plannedId)?.status).toBe('delivered');
+    expect(completed.items.find((item) => item.id === 'bread')?.status).toBe('delivered');
   });
   it('hele või tume režiim salvestatakse eraldi iga kasutaja profiilile', () => {
     const changed = setProfileThemePreference(createDemoState(), 'user-b', 'dark');

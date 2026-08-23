@@ -1,43 +1,48 @@
-import React, { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { router } from 'expo-router';
-import { Alert, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '@/context/AppContext';
 import { ThemeColors } from '@/theme';
 import { AppIcon } from '@/components/AppIcon';
-import { Button, Card, Empty, Field, Page, Sheet } from '@/components/ui';
+import { Button, Card, Empty, Page } from '@/components/ui';
+import { DeliveryFormSheet } from '@/components/DeliveryFormSheet';
 import { formatEuros, settlementVisibleTo } from '@/data/settlements';
+import { departureAt, departureTime, isActiveShipment } from '@/data/departures';
+import { Delivery, Item } from '@/types/domain';
+
+type ShipLoad = { ship: string; departureAt: number; departure: string; items: Item[]; deliveries: Delivery[] };
 
 export default function ListsScreen() {
-  const app = useApp(); const { width } = useWindowDimensions();
-  const styles = makeStyles(app.themeColors);
-  const [adding, setAdding] = useState(false); const [name, setName] = useState(''); const [description, setDescription] = useState('');
-  const [saving, setSaving] = useState(false); const [formError, setFormError] = useState('');
-  const lists = app.state.lists.filter((list) => !list.archived_at && !list.deleted_at && !list.is_quick_list);
+  const app = useApp(); const styles = makeStyles(app.themeColors);
+  const [openedShip, setOpenedShip] = useState<string | null>(null);
+  const [editingListId, setEditingListId] = useState<string | null>(null);
   const settlements = app.state.settlements.filter((value) => app.currentUser && settlementVisibleTo(value, app.currentUser.id) && ['open', 'marked_paid'].includes(value.status));
   const iOwe = settlements.filter((value) => value.debtor_id === app.currentUser?.id).reduce((sum, value) => sum + Number(value.amount), 0);
   const owedToMe = settlements.filter((value) => value.creditor_id === app.currentUser?.id).reduce((sum, value) => sum + Number(value.amount), 0);
-  const submit = async () => {
-    if (!name.trim() || saving) return;
-    setSaving(true); setFormError('');
-    try {
-      const id = await app.addList(name.trim(), description.trim() || undefined);
-      setName(''); setDescription(''); setAdding(false);
-      router.push(`/(app)/list/${id}` as never);
-    } catch (reason) {
-      setFormError(reason instanceof Error ? reason.message : 'Nimekirja loomine ebaõnnestus. Proovi uuesti.');
-    } finally {
-      setSaving(false);
-    }
-  };
-  const remove = (id: string, listName: string) => { const run = () => app.deleteList(id); const message = `Kas liigutada nimekiri „${listName}“ prügikasti? Saad selle 30 päeva jooksul taastada. Juba jooksvasse listi vabastatud tooted jäävad alles.`; if (Platform.OS === 'web') { if (window.confirm(message)) run(); } else Alert.alert('Liiguta prügikasti?', message, [{ text: 'Loobu', style: 'cancel' }, { text: 'Prügikasti', style: 'destructive', onPress: run }]); };
-  return <Page title={`Tere, ${app.currentUser?.display_name}!`} subtitle={app.isCreator ? 'Siin on grupi aktiivsed ostunimekirjad.' : 'Vaata, mida on vaja osta ja laevale toimetada.'} action={app.isCreator ? <Button label={width < 480 ? 'Uus' : 'Uus nimekiri'} icon="+" onPress={() => setAdding(true)} /> : undefined}>
-    <Pressable accessibilityRole="link" accessibilityLabel="Ava arveldused" onPress={() => router.push('/(app)/settlements' as never)}><Card style={styles.settlementCard}><View style={styles.settlementIcon}><AppIcon name="euro" color={app.themeColors.primaryDark} size={23} strokeWidth={1.8} /></View><View style={{ flex: 1 }}><Text style={styles.listName}>Arveldused</Text><Text style={styles.desc}>{settlements.length ? `Mina pean maksma ${formatEuros(iOwe)} · Mulle ${formatEuros(owedToMe)}` : 'Lisa ja vaata grupiliikmete vahelisi summasid.'}</Text></View><View style={styles.chevronWrap}><AppIcon name="chevron-right" color={app.themeColors.primary} size={21} strokeWidth={2.5} /></View></Card></Pressable>
-    {lists.length ? <View style={styles.grid}>{lists.map((list) => {
-      const items = app.state.items.filter((item) => item.list_id === list.id && !item.deleted_at); const done = items.filter((item) => item.status === 'purchased' || item.status === 'delivered').length; const delivery = app.state.deliveries.find((value) => value.list_id === list.id);
-      return <Card key={list.id} style={[styles.listWrap, width < 600 && styles.listWrapNarrow]}><Pressable accessibilityRole="link" accessibilityLabel={`Ava nimekiri ${list.name}`} onPress={() => router.push(`/(app)/list/${list.id}` as never)} style={{ gap: 14, minWidth: 0 }}><View style={styles.listHead}><View style={{ flex: 1, minWidth: 0 }}><Text style={styles.listName}>{list.name}</Text>{list.description ? <Text style={styles.desc}>{list.description}</Text> : null}</View><View style={styles.chevronWrap}><AppIcon name="chevron-right" color={app.themeColors.primary} size={21} strokeWidth={2.5} /></View></View><View style={styles.progressTrack}><View style={[styles.progress, { width: `${items.length ? done / items.length * 100 : 0}%` }]} /></View><Text style={styles.progressText}>{done} / {items.length} tehtud</Text>{delivery ? <View style={styles.delivery}><View style={styles.deliveryIcon}><AppIcon name="ship" color={app.themeColors.accentText} size={23} /></View><View style={{ flex: 1, minWidth: 0 }}><Text style={styles.deliveryTitle}>{delivery.ship_name}{delivery.departure_time ? ` · ${delivery.departure_time}` : ''}</Text><Text style={styles.desc}>{delivery.departure_date.split('-').reverse().join('.')} · {delivery.handover_place}</Text></View></View> : null}</Pressable>{app.isCreator ? <Button label="Liiguta prügikasti" variant="danger" onPress={() => remove(list.id, list.name)} /> : null}</Card>;
-    })}</View> : <Empty icon="☷" title="Aktiivseid nimekirju pole" body="Loo esimene nimekiri ja lisa sinna vajalikud kaubad." />}
-    <Button label="Vaata arhiivi" variant="ghost" icon="□" onPress={() => router.push('/(app)/archived' as never)} />
-    <Sheet visible={adding} title="Uus ostunimekiri" onClose={() => { if (!saving) { setAdding(false); setFormError(''); } }}><Field label="Nimekirja nimi" value={name} onChangeText={setName} placeholder="Näiteks Kaubad 20. augustiks" autoFocus /><Field label="Märkused" value={description} onChangeText={setDescription} placeholder="Lisa soovi korral märkused" multiline />{formError ? <Text accessibilityRole="alert" style={[styles.formError, { color: app.themeColors.danger }]}>{formError}</Text> : null}<Button label={saving ? 'Loon nimekirja…' : 'Loo nimekiri'} onPress={() => void submit()} disabled={!name.trim() || saving} /></Sheet>
+  const shipLoads = useMemo(() => {
+    const linksByDelivery = new Map<string, string[]>(); app.state.deliveryItems.forEach((link) => linksByDelivery.set(link.delivery_id, [...(linksByDelivery.get(link.delivery_id) ?? []), link.item_id]));
+    const itemsById = new Map(app.state.items.map((item) => [item.id, item]));
+    const loads = app.state.deliveries.filter((delivery) => isActiveShipment(delivery)).map((delivery) => {
+      const linked = (linksByDelivery.get(delivery.id) ?? []).map((id) => itemsById.get(id)).filter((item): item is Item => Boolean(item && !item.deleted_at && item.status === 'purchased'));
+      const items = linked.length ? linked : app.state.items.filter((item) => !item.deleted_at && item.list_id === delivery.list_id && item.assigned_to === delivery.courier_id && item.status === 'purchased');
+      return { ship: delivery.ship_name, departureAt: departureAt(delivery), departure: `${delivery.departure_date.split('-').reverse().join('.')} kell ${departureTime(delivery.departure_time)}`, items, deliveries: [delivery] };
+    }).filter((load) => load.items.length);
+    const grouped = new Map<string, ShipLoad>();
+    loads.forEach((load) => { const previous = grouped.get(load.ship); grouped.set(load.ship, previous ? { ...previous, departureAt: Math.min(previous.departureAt, load.departureAt), departure: previous.departureAt <= load.departureAt ? previous.departure : load.departure, items: [...previous.items, ...load.items], deliveries: [...previous.deliveries, ...load.deliveries] } : load); });
+    return [...grouped.values()].sort((a, b) => a.departureAt - b.departureAt);
+  }, [app.state.deliveries, app.state.deliveryItems, app.state.items]);
+  const selected = shipLoads.find((load) => load.ship === openedShip);
+  return <Page title={`Tere, ${app.currentUser?.display_name}!`} subtitle="Siin näed arveldusi ja praegu laevadel olevaid kaupu.">
+    <Pressable accessibilityRole="link" accessibilityLabel="Ava arveldused" onPress={() => router.push('/(app)/settlements' as never)}><Card style={styles.settlementCard}><View style={styles.settlementIcon}><AppIcon name="euro" color={app.themeColors.primaryDark} size={23} strokeWidth={1.8} /></View><View style={{ flex: 1 }}><Text style={styles.name}>Arveldused</Text><Text style={styles.desc}>{settlements.length ? `Mina pean maksma ${formatEuros(iOwe)} · Mulle ${formatEuros(owedToMe)}` : 'Lisa ja vaata grupiliikmete vahelisi summasid.'}</Text></View><AppIcon name="chevron-right" color={app.themeColors.primary} size={21} strokeWidth={2.5} /></Card></Pressable>
+    <View style={styles.sectionHead}><Text style={styles.sectionTitle}>Laeval olevad asjad</Text><Text style={styles.sectionHint}>Saadetis liigub arhiivi 1 tund pärast väljumist.</Text></View>
+    {shipLoads.length ? <View style={styles.grid}>{shipLoads.map((load) => {
+      const editable = load.deliveries.find((delivery) => delivery.courier_id === app.currentUser?.id);
+      const opened = openedShip === load.ship;
+      return <Card key={load.ship} style={opened ? styles.shipCardOpen : undefined}><Pressable accessibilityRole="button" accessibilityState={{ expanded: opened }} onPress={() => setOpenedShip((current) => current === load.ship ? null : load.ship)} style={styles.shipCard}><View style={styles.shipIcon}><AppIcon name="ship" color={app.themeColors.accentText} size={25} /></View><View style={{ flex: 1 }}><Text style={styles.name}>{load.ship}</Text><Text style={styles.desc}>{load.items.length} {load.items.length === 1 ? 'asi' : 'asja'} · väljub {load.departure}</Text></View><AppIcon name={opened ? 'chevron-down' : 'chevron-right'} color={app.themeColors.primary} size={21} strokeWidth={2.5} /></Pressable>{opened && editable ? <Button label="Muuda laevainfot" variant="secondary" onPress={() => setEditingListId(editable.list_id)} /> : null}</Card>;
+    })}</View> : <Empty icon="⚓" title="Laeval kaupu ei ole" body="Ostetud kaup ilmub siia pärast laeva ja väljumisaja määramist." />}
+    {selected ? <Card style={styles.itemCard}><Text style={styles.name}>{selected.ship}</Text><Text style={styles.desc}>Väljub {selected.departure}</Text>{selected.items.map((item) => <View key={item.id} style={styles.itemRow}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.itemMeta}>{item.quantity} {item.unit ?? 'tk'}</Text></View>)}</Card> : null}
+    <DeliveryFormSheet listId={editingListId} onClose={() => setEditingListId(null)} />
   </Page>;
 }
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({ grid: { width: '100%', minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', gap: 14 }, listWrap: { minWidth: 0, maxWidth: '100%', flexBasis: 400, flexGrow: 1, flexShrink: 1 }, listWrapNarrow: { width: '100%', flexBasis: '100%' }, listHead: { minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: 10 }, listName: { fontSize: 20, lineHeight: 26, fontWeight: '700', letterSpacing: -.2, color: colors.ink }, desc: { color: colors.muted, fontSize: 15, lineHeight: 22, marginTop: 3 }, chevronWrap: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }, progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.progressTrack, overflow: 'hidden' }, progress: { height: '100%', backgroundColor: colors.primary, borderRadius: 3 }, progressText: { color: colors.muted, fontSize: 14, fontWeight: '600' }, delivery: { minWidth: 0, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentBorder, borderRadius: 9, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 }, deliveryIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }, deliveryTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' }, formError: { fontSize: 16, lineHeight: 22 }, settlementCard: { flexDirection: 'row', alignItems: 'center', gap: 14 }, settlementIcon: { width: 46, height: 46, borderRadius: 10, backgroundColor: colors.subtle, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' } });
+
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({ settlementCard: { flexDirection: 'row', alignItems: 'center', gap: 14 }, settlementIcon: { width: 46, height: 46, borderRadius: 10, backgroundColor: colors.subtle, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }, sectionHead: { gap: 3, marginTop: 6 }, sectionTitle: { color: colors.ink, fontSize: 22, fontWeight: '700' }, sectionHint: { color: colors.muted, fontSize: 14, lineHeight: 20 }, grid: { gap: 10 }, shipCard: { flexDirection: 'row', alignItems: 'center', gap: 12 }, shipCardOpen: { borderColor: colors.accentBorder, backgroundColor: colors.accentSoft, gap: 12 }, shipIcon: { width: 42, height: 42, borderRadius: 9, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }, name: { color: colors.ink, fontSize: 19, fontWeight: '700' }, desc: { color: colors.muted, fontSize: 15, lineHeight: 22, marginTop: 3 }, itemCard: { gap: 10 }, itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border, gap: 12 }, itemName: { flex: 1, color: colors.ink, fontSize: 16, fontWeight: '600' }, itemMeta: { color: colors.muted, fontSize: 15 } });

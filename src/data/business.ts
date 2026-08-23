@@ -1,5 +1,6 @@
 import { Category, CategoryTemplate, Delivery, DemoState, ItemStatus, Notification, ShoppingList, ThemeMode } from '@/types/domain';
 import { deliveryCompletedNotification } from './access';
+import { isActiveShipment } from './departures';
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const timestamp = () => new Date().toISOString();
@@ -200,13 +201,16 @@ export function setProfileThemePreference(state: DemoState, profileId: string, t
 }
 
 export function saveDeliveryInDemo(state: DemoState, listId: string, userId: string, input: Pick<Delivery, 'ship_name' | 'departure_date' | 'departure_time' | 'port' | 'handover_place'> & Partial<Pick<Delivery, 'note'>>, delivered = false): DemoState {
-  const at = timestamp(); const previous = state.deliveries.find((value) => value.list_id === listId && value.courier_id === userId);
+  const at = timestamp(); const previous = state.deliveries.find((value) => value.list_id === listId && value.courier_id === userId && isActiveShipment(value));
   const delivery: Delivery = { ...input, id: previous?.id ?? uid(), list_id: listId, created_by: previous?.created_by ?? userId, courier_id: userId, status: delivered ? 'delivered' : 'planned', created_at: previous?.created_at ?? at, updated_at: at };
   const list = state.lists.find((value) => value.id === listId); const actor = profileName(state, userId);
   const purchased = delivered ? state.items.filter((item) => !item.deleted_at && item.list_id === listId && item.assigned_to === userId && item.status === 'purchased') : [];
   const notification = delivered && list && list.created_by !== userId ? { id: uid(), group_id: list.group_id, user_id: list.created_by, actor_id: userId, list_id: listId, type: 'delivery_completed', title: 'Kaubad laevale viidud', body: deliveryCompletedNotification(actor, input.ship_name, input.departure_date, input.departure_time, input.handover_place), created_at: at, updated_at: at } : null;
   const deliveredActivity = purchased.map((item) => ({ id: uid(), group_id: list?.group_id ?? 'family', actor_id: userId, list_id: listId, item_id: item.id, action: 'Märkis kaubad laevale viiduks', previous_status: 'purchased' as const, new_status: 'delivered' as const, created_at: at, updated_at: at }));
-  const deliveryItems = purchased.map((item) => ({ id: uid(), delivery_id: delivery.id, item_id: item.id, created_at: at, updated_at: at }));
+  const shipmentItems = state.items.filter((item) => !item.deleted_at && item.list_id === listId && item.assigned_to === userId && item.status === 'purchased' && (delivered || !state.deliveryItems.some((value) => value.item_id === item.id)));
+  const deliveryItems = delivered
+    ? shipmentItems.map((item) => ({ id: uid(), delivery_id: delivery.id, item_id: item.id, created_at: at, updated_at: at }))
+    : [...state.deliveryItems.filter((value) => value.delivery_id === delivery.id), ...shipmentItems.map((item) => ({ id: uid(), delivery_id: delivery.id, item_id: item.id, created_at: at, updated_at: at }))];
   return { ...state, items: delivered ? state.items.map((item) => purchased.some((value) => value.id === item.id) ? { ...item, status: 'delivered' as const, updated_at: at } : item) : state.items, deliveries: [...state.deliveries.filter((value) => value.id !== delivery.id), delivery], deliveryItems: [...state.deliveryItems.filter((value) => value.delivery_id !== delivery.id), ...deliveryItems], notifications: notification ? [notification, ...state.notifications] : state.notifications, activity: [...state.activity, ...deliveredActivity] };
 }
 

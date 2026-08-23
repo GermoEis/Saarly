@@ -3,7 +3,7 @@ import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
-import { DemoState, GroupInvite, GroupMembership, ItemImage, Settlement } from '@/types/domain';
+import { Delivery, DemoState, GroupInvite, GroupMembership, ItemImage, Settlement } from '@/types/domain';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -249,7 +249,8 @@ export class SupabaseRepository {
   async cancelSettlement(id: string) { const { data, error } = await this.client().rpc('cancel_settlement', { target_settlement: id }); if (error) throw this.settlementError(error.message); return data; }
   async markNotificationsRead(userId: string) { const { error } = await this.client().from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).is('read_at', null); if (error) throw error; }
   async saveWebPushSubscription(userId: string, subscription: PushSubscription) { const { error } = await this.client().from('push_tokens').upsert({ user_id: userId, token: JSON.stringify(subscription.toJSON()), platform: 'web' }, { onConflict: 'token' }); if (error) throw error; }
-  async upsertDelivery(values: Record<string, unknown>) { const { error } = await this.client().from('deliveries').upsert(values, { onConflict: 'id' }); if (error) throw error; }
+  async upsertDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().from('deliveries').upsert(values, { onConflict: 'id' }).select().single(); if (error) throw error; return data as Delivery; }
+  async addDeliveryItems(deliveryId: string, itemIds: string[]) { if (!itemIds.length) return; const { error } = await this.client().from('delivery_items').upsert(itemIds.map((item_id) => ({ delivery_id: deliveryId, item_id })), { onConflict: 'delivery_id,item_id', ignoreDuplicates: true }); if (error) throw error; }
   async completeDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().rpc('complete_delivery', { target_list: values.target_list, target_delivery: values.delivery_id ?? null, delivery_ship: values.ship_name, delivery_date: values.departure_date, delivery_time: values.departure_time ?? null, delivery_port: values.port, delivery_place: values.handover_place, delivery_note: values.note ?? null }); if (error) throw error; return data; }
   async undoCompletedDelivery(id: string) { const { error } = await this.client().rpc('undo_completed_delivery', { target_delivery: id }); if (error) throw error; }
   subscribe(groupId: string, refresh: () => void) {

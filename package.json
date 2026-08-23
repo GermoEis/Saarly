@@ -11,10 +11,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "deploy": "npx expo export -p web && wrangler deploy",
+    "preview": "npx expo export -p web && wrangler dev"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "~2.2.0",
+    "@react-native-picker/picker": "2.11.4",
     "@supabase/supabase-js": "^2.57.4",
     "expo": "~57.0.12",
     "expo-auth-session": "~57.0.6",
@@ -44,6 +47,6 @@
     "eslint-config-expo": "~57.0.1",
     "typescript": "~6.0.3",
     "vitest": "^3.2.4",
-    "wrangler": "^4.120.0"
+    "wrangler": "^4.125.0"
   }
 }

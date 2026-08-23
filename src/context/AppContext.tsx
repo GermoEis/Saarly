@@ -15,6 +15,7 @@ import { colorsFor, ThemeColors } from '@/theme';
 import { requestWebNotificationPermission, showDemoWebNotification, subscribeToWebPush, WebNotificationPermission } from '@/services/webPush';
 import { applyOfflinePurchase, CloudWorkspaceCache, loadCloudWorkspaceCache, loadOfflineActions, OfflinePurchaseAction, saveCloudWorkspaceCache, saveOfflineActions } from '@/data/offlineQueue';
 import { combinedQuantity } from '@/data/duplicates';
+import { isActiveShipment } from '@/data/departures';
 
 type NewItem = Pick<Item, 'name' | 'quantity' | 'category_id'> & Partial<Pick<Item, 'unit' | 'note' | 'assigned_to'>>;
 type NewItemPhoto = { uri: string; mimeType?: string | null; base64?: string | null };
@@ -60,7 +61,7 @@ interface AppContextValue {
   accept: (itemId: string) => void;
   decline: (itemId: string) => void;
   releaseAll: () => void;
-  outcome: (itemId: string, value: 'purchased' | 'unavailable' | 'delivered', note?: string) => void;
+  outcome: (itemId: string, value: 'purchased' | 'unavailable' | 'delivered', note?: string) => Promise<boolean>;
   addList: (name: string, description?: string) => Promise<string>;
   updateList: (id: string, name: string, description?: string) => Promise<void>;
   archiveList: (id: string) => void;
@@ -82,7 +83,7 @@ interface AppContextValue {
   deleteNote: (id: string) => void;
   setItemImage: (itemId: string, uri: string, mimeType?: string | null, base64?: string | null) => Promise<void>;
   removeItemImage: (itemId: string) => Promise<void>;
-  saveDelivery: (listId: string, input: Pick<Delivery, 'ship_name' | 'departure_date' | 'departure_time' | 'port' | 'handover_place'> & Partial<Pick<Delivery, 'note'>>, delivered?: boolean) => void;
+  saveDelivery: (listId: string, input: Pick<Delivery, 'ship_name' | 'departure_date' | 'departure_time' | 'port' | 'handover_place'> & Partial<Pick<Delivery, 'note'>>, delivered?: boolean) => Promise<boolean>;
   createSettlement: (input: Pick<Settlement, 'debtor_id' | 'amount' | 'description'> & Partial<Pick<Settlement, 'shopping_list_id'>>) => Promise<void>;
   markSettlementPaid: (id: string) => Promise<void>;
   confirmSettlementPaid: (id: string) => Promise<void>;
@@ -435,23 +436,34 @@ export function AppProvider({ children }: React.PropsWithChildren) {
   const accept = (itemId: string) => { if (hasSupabaseConfig) void cloud.respondToAssignment(itemId, true).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => acceptItem(current, itemId, current.currentUserId!)); };
   const decline = (itemId: string) => { if (hasSupabaseConfig) void cloud.respondToAssignment(itemId, false).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => declineItem(current, itemId, current.currentUserId!)); };
   const releaseAll = () => { if (hasSupabaseConfig) { const releasable = state.items.filter((item) => item.assigned_to === state.currentUserId && ['assigned', 'accepted'].includes(item.status)); void Promise.all(releasable.map((item) => cloud.respondToAssignment(item.id, false))).then(() => refreshCloud()).catch((error) => show(error.message)); } else update((current) => releaseAllItems(current, current.currentUserId!)); };
-  const outcome = (itemId: string, value: 'purchased' | 'unavailable' | 'delivered', note?: string) => {
+  const outcome = async (itemId: string, value: 'purchased' | 'unavailable' | 'delivered', note?: string) => {
     if (hasSupabaseConfig) {
       const item = stateRef.current.items.find((entry) => entry.id === itemId);
-      if (value === 'purchased' && item && isOnline === false) { void queuePurchasedItem(item).catch((error) => show(error.message)); return; }
+      if (value === 'purchased' && item && isOnline === false) {
+        try { await queuePurchasedItem(item); return true; }
+        catch (error) { show(error instanceof Error ? error.message : 'Toote ostetuks märkimine ebaõnnestus.'); return false; }
+      }
       const action = value === 'unavailable' ? cloud.markUnavailable(itemId, note) : cloud.setItemStatus(itemId, value);
-      void action.then(async () => {
+      try {
+        await action;
         await refreshCloud();
         if (value !== 'unavailable' && item) {
           const previousStatus = item.status === 'assigned' || item.status === 'accepted' || item.status === 'purchased' ? item.status : 'accepted';
           scheduleUndo(value === 'purchased' ? 'Toode märgiti ostetuks.' : 'Toode märgiti laevale viiduks.', async () => { await cloud.undoItemStatus(itemId, previousStatus); await refreshCloud(); });
         }
-      }).catch((error) => {
-        if (value === 'purchased' && item && isNetworkFailure(error)) void queuePurchasedItem(item).catch((reason) => show(reason.message));
-        else show(error.message);
-      });
-    } else if (value === 'purchased' || value === 'delivered') updateWithUndo(value === 'purchased' ? 'Toode märgiti ostetuks.' : 'Toode märgiti laevale viiduks.', (current) => setItemOutcome(current, itemId, current.currentUserId!, value, note));
+        return true;
+      } catch (error) {
+        if (value === 'purchased' && item && isNetworkFailure(error)) {
+          try { await queuePurchasedItem(item); return true; }
+          catch (reason) { show(reason instanceof Error ? reason.message : 'Toote ostetuks märkimine ebaõnnestus.'); return false; }
+        }
+        show(error instanceof Error ? error.message : 'Toote oleku muutmine ebaõnnestus.');
+        return false;
+      }
+    }
+    if (value === 'purchased' || value === 'delivered') updateWithUndo(value === 'purchased' ? 'Toode märgiti ostetuks.' : 'Toode märgiti laevale viiduks.', (current) => setItemOutcome(current, itemId, current.currentUserId!, value, note));
     else update((current) => setItemOutcome(current, itemId, current.currentUserId!, value, note));
+    return true;
   };
 
   const addList = async (name: string, description?: string) => {
@@ -584,7 +596,32 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     return { ...current, images: [...current.images.filter((value) => value.item_id !== itemId), image] };
   }); };
   const removeItemImage = async (itemId: string) => { if (hasSupabaseConfig) { try { await cloud.removeItemImage(itemId, state.currentUserId!); await refreshCloud(); } catch (error) { show(error instanceof Error ? error.message : 'Foto eemaldamine ebaõnnestus.'); } return; } update((current) => ({ ...current, images: current.images.filter((value) => value.item_id !== itemId) })); };
-  const saveDelivery = (listId: string, input: Pick<Delivery, 'ship_name' | 'departure_date' | 'departure_time' | 'port' | 'handover_place'> & Partial<Pick<Delivery, 'note'>>, delivered = false) => { if (hasSupabaseConfig) { const previous = state.deliveries.find((value) => value.list_id === listId && value.courier_id === state.currentUserId); const operation = delivered ? cloud.completeDelivery({ ...(previous ? { delivery_id: previous.id } : {}), ...input, target_list: listId }) : cloud.upsertDelivery({ ...(previous ? { id: previous.id } : {}), ...input, list_id: listId, created_by: state.currentUserId, courier_id: state.currentUserId, status: 'planned' }); void operation.then(async (saved) => { await refreshCloud(); if (delivered) { const deliveryId = (saved as { id?: string } | null)?.id ?? previous?.id; if (deliveryId) scheduleUndo('Kaubad märgiti laevale viiduks.', async () => { await cloud.undoCompletedDelivery(deliveryId); await refreshCloud(); }); } }).catch((error) => show(error.message)); return; } if (delivered) updateWithUndo('Kaubad märgiti laevale viiduks.', (current) => saveDeliveryInDemo(current, listId, current.currentUserId!, input, true)); else update((current) => saveDeliveryInDemo(current, listId, current.currentUserId!, input, false)); };
+  const saveDelivery = async (listId: string, input: Pick<Delivery, 'ship_name' | 'departure_date' | 'departure_time' | 'port' | 'handover_place'> & Partial<Pick<Delivery, 'note'>>, delivered = false) => {
+    if (hasSupabaseConfig) {
+      try {
+        const previous = stateRef.current.deliveries.find((value) => value.list_id === listId && value.courier_id === stateRef.current.currentUserId && isActiveShipment(value));
+        const saved = delivered
+          ? await cloud.completeDelivery({ ...(previous ? { delivery_id: previous.id } : {}), ...input, target_list: listId })
+          : await cloud.upsertDelivery({ ...(previous ? { id: previous.id } : {}), ...input, list_id: listId, created_by: stateRef.current.currentUserId, courier_id: stateRef.current.currentUserId, status: 'planned' });
+        if (!delivered && saved?.id) {
+          const itemIds = stateRef.current.items.filter((item) => !item.deleted_at && item.list_id === listId && item.assigned_to === stateRef.current.currentUserId && item.status === 'purchased' && !stateRef.current.deliveryItems.some((entry) => entry.item_id === item.id)).map((item) => item.id);
+          await cloud.addDeliveryItems(saved.id, itemIds);
+        }
+        await refreshCloud();
+        if (delivered) {
+          const deliveryId = (saved as { id?: string } | null)?.id ?? previous?.id;
+          if (deliveryId) scheduleUndo('Kaubad märgiti laevale viiduks.', async () => { await cloud.undoCompletedDelivery(deliveryId); await refreshCloud(); });
+        }
+        return true;
+      } catch (error) {
+        show(error instanceof Error ? `Laevainfo salvestamine ebaõnnestus: ${error.message}` : 'Laevainfo salvestamine ebaõnnestus.');
+        return false;
+      }
+    }
+    if (delivered) updateWithUndo('Kaubad märgiti laevale viiduks.', (current) => saveDeliveryInDemo(current, listId, current.currentUserId!, input, true));
+    else update((current) => saveDeliveryInDemo(current, listId, current.currentUserId!, input, false));
+    return true;
+  };
   const createSettlement = async (input: Pick<Settlement, 'debtor_id' | 'amount' | 'description'> & Partial<Pick<Settlement, 'shopping_list_id'>>) => {
     if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
     if (hasSupabaseConfig) { await cloud.createSettlement(cloudGroupId.current!, input); await refreshCloud(); return; }
