@@ -303,9 +303,16 @@ export class SupabaseRepository {
   }
   async markNotificationsRead(userId: string) { const { error } = await this.client().from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).is('read_at', null); if (error) throw error; }
   async saveWebPushSubscription(userId: string, subscription: PushSubscription) { const { error } = await this.client().from('push_tokens').upsert({ user_id: userId, token: JSON.stringify(subscription.toJSON()), platform: 'web' }, { onConflict: 'token' }); if (error) throw error; }
-  async upsertDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().from('deliveries').upsert(values, { onConflict: 'id' }).select().single(); if (error) throw error; return data as Delivery; }
-  async addDeliveryItems(deliveryId: string, itemIds: string[]) { if (!itemIds.length) return; const { error } = await this.client().from('delivery_items').upsert(itemIds.map((item_id) => ({ delivery_id: deliveryId, item_id })), { onConflict: 'delivery_id,item_id', ignoreDuplicates: true }); if (error) throw error; }
-  async completeDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().rpc('complete_delivery', { target_list: values.target_list, target_delivery: values.delivery_id ?? null, delivery_ship: values.ship_name, delivery_date: values.departure_date, delivery_time: values.departure_time ?? null, delivery_port: values.port, delivery_place: values.handover_place, delivery_note: values.note ?? null }); if (error) throw error; return data; }
+  private deliveryError(message: string) {
+    if (message.includes('not_a_group_member')) return new Error('Sa ei kuulu enam sellesse gruppi. Värskenda vaadet.');
+    if (message.includes('no_purchased_items')) return new Error('Selles saadetises pole ühtegi ostetud toodet.');
+    if (message.includes('delivery_not_available')) return new Error('Seda saadetist ei saa enam muuta. Värskenda vaadet.');
+    if (message.includes('all_items_must_be_purchased')) return new Error('Kõik selle saadetise tooted peavad enne olema ostetud.');
+    return new Error(message);
+  }
+  async upsertDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().from('deliveries').upsert(values, { onConflict: 'id' }).select().single(); if (error) throw this.deliveryError(error.message); return data as Delivery; }
+  async addDeliveryItems(deliveryId: string, itemIds: string[]) { if (!itemIds.length) return; const { error } = await this.client().from('delivery_items').upsert(itemIds.map((item_id) => ({ delivery_id: deliveryId, item_id })), { onConflict: 'delivery_id,item_id', ignoreDuplicates: true }); if (error) throw this.deliveryError(error.message); }
+  async completeDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().rpc('complete_delivery', { target_list: values.target_list, target_delivery: values.delivery_id ?? null, delivery_ship: values.ship_name, delivery_date: values.departure_date, delivery_time: values.departure_time ?? null, delivery_port: values.port, delivery_place: values.handover_place, delivery_note: values.note ?? null }); if (error) throw this.deliveryError(error.message); return data; }
   async removeItemFromDelivery(itemId: string) {
     await this.undoItemStatus(itemId, 'purchased');
     const { error } = await this.client().from('delivery_items').delete().eq('item_id', itemId);
