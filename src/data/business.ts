@@ -114,6 +114,19 @@ export function setItemOutcome(state: DemoState, itemId: string, userId: string,
   return archiveListIfComplete(next, item.list_id);
 }
 
+export function removeItemFromDelivery(state: DemoState, itemId: string, userId: string): DemoState {
+  const item = state.items.find((value) => value.id === itemId);
+  if (!item || item.deleted_at || item.assigned_to !== userId || item.status !== 'delivered') return state;
+  const at = timestamp();
+  const restored = {
+    ...state,
+    items: state.items.map((value) => value.id === itemId ? { ...value, status: 'purchased' as const, updated_at: at } : value),
+    deliveryItems: state.deliveryItems.filter((value) => value.item_id !== itemId),
+    lists: state.lists.map((value) => value.id === item.list_id && value.archived_at ? { ...value, archived_at: undefined, updated_at: at } : value),
+  };
+  return record(restored, itemId, userId, 'Eemaldas toote laevalt', 'delivered', 'purchased');
+}
+
 export function profileName(state: DemoState, id?: string) { return state.profiles.find((value) => value.id === id)?.display_name ?? 'Kasutaja'; }
 
 export function statusForAssignment(assignedTo?: string): ItemStatus {

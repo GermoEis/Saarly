@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDemoState } from '../src/data/demoSeed';
-import { archiveListIfComplete, assignedItemsForUser, categoriesForNewList, claimItem, declineItem, deleteListPreservingFloating, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '../src/data/business';
+import { archiveListIfComplete, assignedItemsForUser, categoriesForNewList, claimItem, declineItem, deleteListPreservingFloating, releaseAllItems, removeBuyerMember, removeItemFromDelivery, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '../src/data/business';
 import { canManageShoppingContent, deliveryCompletedNotification, deliveryNotification, visibleListsForUser } from '../src/data/access';
 import { selectActiveGroupId } from '../src/data/groups';
 import { GroupMembership } from '../src/types/domain';
@@ -11,7 +11,9 @@ import { moveItemToTrash, moveListToTrash, purgeExpiredTrash, restoreItemFromTra
 import { combinedQuantity, findActiveDuplicate, findFloatingDuplicate, normalizeProductName } from '../src/data/duplicates';
 import { groupStatistics } from '../src/data/statistics';
 import { applyOfflinePurchase } from '../src/data/offlineQueue';
-import { departureTimesForDate, isActiveShipment } from '../src/data/departures';
+import { departureTimesForDate, isActiveShipment, isDeliveredShipmentVisible } from '../src/data/departures';
+import { barDebtorCreditBalance, barDebtorSuggestions, barEntryPaid, barEntryRemaining, barEntryVisibleTo, barProductSuggestions, createBarLedgerEntryInDemo, recordBarPaymentInDemo, recordBarPrepaymentInDemo, saveBarProductInDemo, updateBarLedgerEntryInDemo, voidBarPaymentInDemo, voidBarPrepaymentInDemo } from '../src/data/barLedger';
+import { assignCategoryInDemo, deleteSharedCategoryInDemo, filterItemsByCategory, sortCategoryItems } from '../src/data/itemCategories';
 
 describe('Saarly põhivood', () => {
   it('laeva saadetis jääb aktiivseks ka siis, kui andmebaas tagastab kellaaja koos sekunditega', () => {
@@ -19,6 +21,11 @@ describe('Saarly põhivood', () => {
   });
   it('vigase vana kellaajaga planeeritud saadetist ei peideta', () => {
     expect(isActiveShipment({ departure_date: '2026-08-20', departure_time: 'vigane', status: 'planned' } as never)).toBe(true);
+  });
+  it('pealehel kuvatakse kaup laeval alles pärast laevale viiduks märkimist', () => {
+    const now = new Date('2026-08-20T17:30:00').getTime();
+    expect(isDeliveredShipmentVisible({ departure_date: '2026-08-20', departure_time: '18:00', status: 'planned' } as never, now)).toBe(false);
+    expect(isDeliveredShipmentVisible({ departure_date: '2026-08-20', departure_time: '18:00', status: 'delivered' } as never, now)).toBe(true);
   });
   it('tänase päeva kellaajavalik ei paku juba möödunud kellaaegu', () => {
     const times = departureTimesForDate('2026-08-20', new Date('2026-08-20T13:36:00'));
@@ -83,6 +90,35 @@ describe('Saarly põhivood', () => {
     expect(sortItems(items, 'za').map((item) => item.name)).toEqual(['Õun', 'Banaan', 'Aprikoos']);
     expect(sortItems(items, 'newest').map((item) => item.name)).toEqual(['Banaan', 'Aprikoos', 'Õun']);
     expect(sortItems(items, 'oldest').map((item) => item.name)).toEqual(['Õun', 'Aprikoos', 'Banaan']);
+  });
+  it('jooksva ja enda nimekirja tooteid saab kategooria järgi filtreerida ning sortida', () => {
+    const state = createDemoState();
+    const items = [state.items.find((item) => item.id === 'beer')!, state.items.find((item) => item.id === 'milk')!, state.items.find((item) => item.id === 'vitamins')!];
+    expect(filterItemsByCategory(state, items, 'alkohol').map((item) => item.id)).toEqual(['beer']);
+    expect(sortCategoryItems(state, items, 'category').map((item) => item.id)).toEqual(['beer', 'vitamins', 'milk']);
+  });
+  it('mitmele eri nimekirja asjale määratakse korraga sama nimega kategooria', () => {
+    const state = createDemoState(); const at = '2026-08-08T10:00:00Z';
+    state.lists.push({ id: 'quick', group_id: 'family', created_by: 'user-a', name: 'Jooksev list', is_quick_list: true, created_at: at, updated_at: at });
+    state.categories.push({ id: 'quick-general', list_id: 'quick', name: 'Üldine', sort_order: 0, created_at: at, updated_at: at });
+    state.items.push({ ...state.items.find((item) => item.id === 'milk')!, id: 'quick-milk', list_id: 'quick', category_id: 'quick-general' });
+    const changed = assignCategoryInDemo(state, ['milk', 'quick-milk'], 'Külmkaup', 'user-a');
+    const selectedCategoryNames = changed.items.filter((item) => ['milk', 'quick-milk'].includes(item.id)).map((item) => changed.categories.find((category) => category.id === item.category_id)?.name);
+    expect(selectedCategoryNames).toEqual(['Külmkaup', 'Külmkaup']);
+    expect(changed.categories.filter((category) => category.name === 'Külmkaup').map((category) => category.list_id).sort()).toEqual(['aug12', 'quick']);
+    expect(changed.categoryTemplates.some((template) => template.name === 'Külmkaup')).toBe(true);
+  });
+  it('jagatud kategooria kustutamisel liiguvad selle tooted üldisesse kategooriasse', () => {
+    const state = createDemoState();
+    const changed = deleteSharedCategoryInDemo(state, 'Toidukaubad');
+    const milk = changed.items.find((item) => item.id === 'milk')!;
+    expect(changed.categories.find((category) => category.id === milk.category_id)?.name).toBe('Üldine');
+    expect(changed.categories.some((category) => category.name === 'Toidukaubad')).toBe(false);
+    expect(changed.categoryTemplates.some((template) => template.name === 'Toidukaubad')).toBe(false);
+  });
+  it('vaikekategooriat Üldine ei saa kustutada', () => {
+    const state = createDemoState();
+    expect(deleteSharedCategoryInDemo(state, ' üldine ')).toBe(state);
   });
   it('kaks kasutajat ei saa sama ujuvat toodet endale võtta', () => {
     const first = claimItem(createDemoState(), 'beer', 'user-b');
@@ -198,6 +234,14 @@ describe('Saarly põhivood', () => {
     expect(completed.deliveries.find((delivery) => delivery.courier_id === 'user-b')?.status).toBe('delivered');
     expect(completed.notifications[0]).toMatchObject({ user_id: 'user-a', type: 'delivery_completed', body: 'Kasutaja B viis kaubad 12.08.2026 kell 18:00 laevale Baltic Queen. Kaubad anti üle D-terminalis.' });
   });
+  it('laevale viidud toote saab tagasi ostetud asjade hulka eemaldada', () => {
+    const fresh = { ...createDemoState(), deliveries: [], deliveryItems: [] };
+    const completed = saveDeliveryInDemo(setItemOutcome(fresh, 'bread', 'user-b', 'purchased'), 'aug12', 'user-b', { ship_name: 'Baltic Queen', departure_date: '2026-08-12', departure_time: '18:00', port: 'Tallinn', handover_place: 'D-terminal' }, true);
+    const removed = removeItemFromDelivery(completed, 'bread', 'user-b');
+    expect(removed.items.find((item) => item.id === 'bread')?.status).toBe('purchased');
+    expect(removed.deliveryItems.some((link) => link.item_id === 'bread')).toBe(false);
+    expect(removed.activity.some((entry) => entry.item_id === 'bread' && entry.action === 'Eemaldas toote laevalt')).toBe(true);
+  });
   it('uus jooksvast listist viimine säilitab varem lõpetatud saadetise', () => {
     const fresh = { ...createDemoState(), deliveries: [], deliveryItems: [] };
     const first = saveDeliveryInDemo(setItemOutcome(fresh, 'bread', 'user-b', 'purchased'), 'aug12', 'user-b', { ship_name: 'Victoria I', departure_date: '2026-08-12', departure_time: '18:00', port: 'Tallinn', handover_place: 'D-terminal' }, true);
@@ -276,5 +320,96 @@ describe('Saarly põhivood', () => {
     const state = confirmSettlementPaidInDemo(createDemoState(), 'settlement-1', 'user-c');
     expect(state.settlements.find((value) => value.id === 'settlement-1')?.status).toBe('paid');
     expect(state.notifications[0]).toMatchObject({ user_id: 'user-b', type: 'settlement_paid', body: 'Kasutaja C märkis arvelduse 24,50 € tasutuks.' });
+  });
+  it('baarivihik arvutab mitu tooterida eurosendi täpsusega', () => {
+    const state = createBarLedgerEntryInDemo(createDemoState(), 'user-b', {
+      debtor_name: 'Jaan Tamm', occurred_at: '2026-09-01T12:00:00Z', items: [
+        { product_name: 'Limonaad', quantity: 3, unit_price: 2.335 },
+        { product_name: 'Võileib', quantity: 2, unit_price: 4.2 },
+      ],
+    });
+    expect(state.barLedgerEntries[0].total_amount).toBe(15.42);
+    expect(state.barLedgerItems.map((item) => item.line_total)).toEqual([7.02, 8.4]);
+  });
+  it('baarivihiku osamakse jätab 85 eurost alles 45 eurot ja täielik makse lõpetab kirje', () => {
+    const created = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: 'Mari', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_name: 'Kaubad', quantity: 1, unit_price: 85 }] });
+    const entry = created.barLedgerEntries[0];
+    const partial = recordBarPaymentInDemo(created, 'user-b', entry.id, { amount: 40, paid_at: '2026-09-01T13:00:00Z' });
+    expect(barEntryPaid(partial, entry.id)).toBe(40);
+    expect(barEntryRemaining(partial, partial.barLedgerEntries[0])).toBe(45);
+    expect(partial.barLedgerEntries[0].status).toBe('open');
+    const paid = recordBarPaymentInDemo(partial, 'user-c', entry.id, { amount: 45, paid_at: '2026-09-01T14:00:00Z' });
+    expect(paid.barLedgerEntries[0].status).toBe('paid');
+    expect(barEntryRemaining(paid, paid.barLedgerEntries[0])).toBe(0);
+  });
+  it('baarivihikut näevad ainult omanik ja täpne administraator', () => {
+    const state = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: 'Peeter', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_name: 'Kohv', quantity: 1, unit_price: 3 }] });
+    const entry = state.barLedgerEntries[0];
+    expect(barEntryVisibleTo(state, entry, 'user-b')).toBe(true);
+    expect(barEntryVisibleTo(state, entry, 'user-c')).toBe(true);
+    expect(barEntryVisibleTo(state, entry, 'user-a')).toBe(false);
+    expect(barEntryVisibleTo(state, entry, 'user-d')).toBe(false);
+  });
+  it('vigase makse tühistamine taastab jäägi ja paranduse auditijälg säilib', () => {
+    const created = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: 'Kati', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_name: 'Mahl', quantity: 10, unit_price: 2 }] });
+    const entry = created.barLedgerEntries[0];
+    const paid = recordBarPaymentInDemo(created, 'user-b', entry.id, { amount: 8, paid_at: '2026-09-01T13:00:00Z' });
+    expect(() => updateBarLedgerEntryInDemo(paid, 'user-b', entry.id, { debtor_id: paid.barDebtors[0].id, debtor_name: 'Kati', occurred_at: entry.occurred_at, items: [{ product_name: 'Mahl', quantity: 3, unit_price: 2 }] })).toThrow('väiksem');
+    const voided = voidBarPaymentInDemo(paid, 'user-c', paid.barLedgerPayments[0].id);
+    const corrected = updateBarLedgerEntryInDemo(voided, 'user-b', entry.id, { debtor_id: voided.barDebtors[0].id, debtor_name: 'Kati', occurred_at: entry.occurred_at, items: [{ product_name: 'Mahl', quantity: 3, unit_price: 2 }] });
+    expect(barEntryRemaining(corrected, corrected.barLedgerEntries[0])).toBe(6);
+    expect(corrected.barLedgerEvents.map((event) => event.event_type)).toEqual(expect.arrayContaining(['created', 'payment_added', 'payment_voided', 'updated']));
+  });
+  it('ühise baaritooteloendi hinnamuutus ei muuda vana võlakirje hinnajälge', () => {
+    const withProduct = saveBarProductInDemo(createDemoState(), 'user-b', { name: 'Vesi', unit_price: 2 });
+    const product = withProduct.barProducts[0];
+    const withEntry = createBarLedgerEntryInDemo(withProduct, 'user-b', { debtor_name: 'Mati', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_id: product.id, product_name: product.name, quantity: 2, unit_price: product.unit_price }] });
+    const changed = saveBarProductInDemo(withEntry, 'user-b', { id: product.id, name: 'Vesi', unit_price: 3 });
+    expect(changed.barProducts[0].unit_price).toBe(3);
+    expect(changed.barLedgerItems[0]).toMatchObject({ unit_price: 2, line_total: 4 });
+  });
+  it('sama omaniku sama nimi kasutab alati sama baariklienti', () => {
+    const first = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: ' Heino ', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_name: 'Kohv', quantity: 1, unit_price: 3 }] });
+    const second = createBarLedgerEntryInDemo(first, 'user-b', { debtor_name: 'heino', occurred_at: '2026-09-01T13:00:00Z', items: [{ product_name: 'Vesi', quantity: 1, unit_price: 2 }] });
+    expect(second.barDebtors).toHaveLength(1);
+    expect(new Set(second.barLedgerEntries.map((entry) => entry.debtor_id)).size).toBe(1);
+  });
+  it('inimese nime kirjutamisel pakutakse sama vihiku varasemat nime', () => {
+    const state = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: 'Heino', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_name: 'Kohv', quantity: 1, unit_price: 3 }] });
+    expect(barDebtorSuggestions(state, 'user-b', 'H').map((debtor) => debtor.name)).toEqual(['Heino']);
+    expect(barDebtorSuggestions(state, 'user-a', 'H')).toEqual([]);
+  });
+  it('toote nime kirjutamisel pakutakse sama vihiku ajaloolist toodet koos hinnaga', () => {
+    const state = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: 'Heino', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_name: 'Mullivesi', quantity: 2, unit_price: 2.5 }] });
+    expect(barProductSuggestions(state, 'user-b', 'mulli')).toEqual([{ key: 'mullivesi', name: 'Mullivesi', unitPrice: 2.5 }]);
+    expect(barProductSuggestions(state, 'user-a', 'mulli')).toEqual([]);
+  });
+  it('tootesoovitus sobib tootenime või sõna algusega, kuid mitte sõna keskel oleva tähega', () => {
+    const state = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: 'Heino', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_name: 'A Le Coq Premium 0,33 l', quantity: 1, unit_price: 2.5 }] });
+    expect(barProductSuggestions(state, 'user-b', 'a').map((product) => product.name)).toEqual(['A Le Coq Premium 0,33 l']);
+    expect(barProductSuggestions(state, 'user-b', 'co').map((product) => product.name)).toEqual(['A Le Coq Premium 0,33 l']);
+    expect(barProductSuggestions(state, 'user-b', 'q')).toEqual([]);
+  });
+  it('kriipsu ja ettemakse juures säilib valitud makseviis', () => {
+    const withEntry = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: 'Heino', occurred_at: '2026-09-01T12:00:00Z', payment_method: 'transfer', items: [{ product_name: 'Kohv', quantity: 1, unit_price: 3 }] });
+    expect(withEntry.barLedgerEntries[0].payment_method).toBe('transfer');
+    const withCredit = recordBarPrepaymentInDemo(withEntry, 'user-b', { debtor_id: withEntry.barDebtors[0].id, debtor_name: 'Heino', amount: 10, occurred_at: '2026-09-01T13:00:00Z', payment_method: 'cash' });
+    expect(withCredit.barCreditTransactions.find((transaction) => transaction.kind === 'deposit')?.payment_method).toBe('cash');
+  });
+  it('100-eurone ettemakse tasub järgmise ostu ja jätab 65 eurot saldole', () => {
+    const credited = recordBarPrepaymentInDemo(createDemoState(), 'user-b', { debtor_name: 'Heino', amount: 100, occurred_at: '2026-09-01T12:00:00Z' });
+    const debtor = credited.barDebtors[0];
+    const purchased = createBarLedgerEntryInDemo(credited, 'user-b', { debtor_name: 'heino', occurred_at: '2026-09-01T13:00:00Z', items: [{ product_name: 'Kaubad', quantity: 1, unit_price: 35 }] });
+    expect(purchased.barLedgerEntries[0].status).toBe('paid');
+    expect(purchased.barLedgerPayments[0]).toMatchObject({ amount: 35, source: 'prepayment' });
+    expect(barDebtorCreditBalance(purchased, debtor.id)).toBe(65);
+  });
+  it('ettemakse tasub olemasoleva võla ning kasutatud ettemakset ei saa tervikuna tühistada', () => {
+    const debt = createBarLedgerEntryInDemo(createDemoState(), 'user-b', { debtor_name: 'Heino', occurred_at: '2026-09-01T12:00:00Z', items: [{ product_name: 'Kaubad', quantity: 1, unit_price: 85 }] });
+    const credited = recordBarPrepaymentInDemo(debt, 'user-b', { debtor_id: debt.barDebtors[0].id, debtor_name: 'Heino', amount: 100, occurred_at: '2026-09-01T13:00:00Z' });
+    expect(credited.barLedgerEntries[0].status).toBe('paid');
+    expect(barDebtorCreditBalance(credited, debt.barDebtors[0].id)).toBe(15);
+    const deposit = credited.barCreditTransactions.find((transaction) => transaction.kind === 'deposit')!;
+    expect(() => voidBarPrepaymentInDemo(credited, 'user-b', deposit.id)).toThrow('juba osa kasutatud');
   });
 });

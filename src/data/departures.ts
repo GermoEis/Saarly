@@ -12,6 +12,10 @@ export function isActiveShipment(delivery: Delivery, now = Date.now()) {
   // kasutajale peita enne, kui tal on võimalik kuupäev/kellaaeg ära parandada.
   return delivery.status === 'planned' && (!Number.isFinite(scheduledAt) || scheduledAt + 60 * 60 * 1000 > now);
 }
+export function isDeliveredShipmentVisible(delivery: Delivery, now = Date.now()) {
+  const scheduledAt = departureAt(delivery);
+  return delivery.status === 'delivered' && (!Number.isFinite(scheduledAt) || scheduledAt + 60 * 60 * 1000 > now);
+}
 export function departureDates(selected: string, days = 45) {
   const dates = Array.from({ length: days }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() + index); return localDate(date); });
   return dates.includes(selected) ? dates : [selected, ...dates];

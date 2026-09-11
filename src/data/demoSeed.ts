@@ -6,7 +6,7 @@ const base = (id: string, created_at = now) => ({ id, created_at, updated_at: cr
 
 export function createDemoState(): DemoState {
   return {
-    version: 3,
+    version: 5,
     currentUserId: null,
     profiles: [
       { ...base('user-a'), display_name: 'Kasutaja A', avatar_color: '#A8556A', theme_preference: 'light' },
@@ -66,5 +66,12 @@ export function createDemoState(): DemoState {
       { ...base('settlement-1'), group_id: 'family', created_by: 'user-c', creditor_id: 'user-c', debtor_id: 'user-b', amount: 24.5, description: 'Augusti poekaubad', shopping_list_id: 'aug12', status: 'open' },
       { ...base('settlement-2'), group_id: 'family', created_by: 'user-a', creditor_id: 'user-a', debtor_id: 'user-d', amount: 12, description: 'Apteegikaup', status: 'paid', marked_paid_at: now, confirmed_at: now },
     ],
+    barDebtors: [],
+    barProducts: [],
+    barLedgerEntries: [],
+    barLedgerItems: [],
+    barLedgerPayments: [],
+    barCreditTransactions: [],
+    barLedgerEvents: [],
   };
 }

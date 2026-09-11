@@ -2,6 +2,8 @@ export type ISODate = string;
 export type ThemeMode = 'light' | 'dark';
 export type Role = 'creator' | 'buyer' | 'admin';
 export type SettlementStatus = 'open' | 'marked_paid' | 'paid' | 'cancelled';
+export type BarLedgerStatus = 'open' | 'paid' | 'cancelled';
+export type BarPaymentMethod = 'cash' | 'transfer';
 export type ItemStatus =
   | 'unassigned'
   | 'assigned'
@@ -70,6 +72,99 @@ export interface Settlement extends BaseEntity {
   cancelled_at?: ISODate;
 }
 
+export interface BarDebtor extends BaseEntity {
+  group_id: string;
+  owner_id: string;
+  name: string;
+  contact?: string;
+}
+export interface BarProduct extends BaseEntity {
+  group_id: string;
+  created_by: string;
+  name: string;
+  unit_price: number;
+  active: boolean;
+}
+export interface BarLedgerEntry extends BaseEntity {
+  group_id: string;
+  owner_id: string;
+  debtor_id: string;
+  occurred_at: ISODate;
+  note?: string;
+  payment_method?: BarPaymentMethod;
+  total_amount: number;
+  status: BarLedgerStatus;
+  paid_at?: ISODate;
+  cancelled_at?: ISODate;
+  cancelled_by?: string;
+}
+export interface BarLedgerItem extends BaseEntity {
+  entry_id: string;
+  product_id?: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+}
+export interface BarLedgerPayment extends BaseEntity {
+  entry_id: string;
+  amount: number;
+  paid_at: ISODate;
+  recorded_by: string;
+  source?: 'payment' | 'prepayment';
+  credit_transaction_id?: string;
+  note?: string;
+  voided_at?: ISODate;
+  voided_by?: string;
+}
+export interface BarCreditTransaction extends BaseEntity {
+  group_id: string;
+  owner_id: string;
+  debtor_id: string;
+  entry_id?: string;
+  kind: 'deposit' | 'usage';
+  amount: number;
+  occurred_at: ISODate;
+  recorded_by: string;
+  note?: string;
+  payment_method?: BarPaymentMethod;
+  voided_at?: ISODate;
+  voided_by?: string;
+}
+export interface BarLedgerEvent extends BaseEntity {
+  entry_id: string;
+  actor_id: string;
+  event_type: 'created' | 'updated' | 'payment_added' | 'payment_voided' | 'cancelled';
+  details: Record<string, unknown>;
+}
+export interface BarLedgerLineInput {
+  product_id?: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+}
+export interface BarLedgerEntryInput {
+  debtor_id?: string;
+  debtor_name: string;
+  debtor_contact?: string;
+  occurred_at: ISODate;
+  note?: string;
+  payment_method?: BarPaymentMethod;
+  items: BarLedgerLineInput[];
+}
+export interface BarLedgerPaymentInput { amount: number; paid_at: ISODate; note?: string }
+export interface BarPrepaymentInput {
+  owner_id?: string;
+  debtor_id?: string;
+  debtor_name: string;
+  debtor_contact?: string;
+  amount: number;
+  occurred_at: ISODate;
+  note?: string;
+  payment_method?: BarPaymentMethod;
+}
+export interface BarProductInput { id?: string; name: string; unit_price: number; active?: boolean }
+
 export interface DemoState {
   version: number;
   currentUserId: string | null;
@@ -89,6 +184,13 @@ export interface DemoState {
   activity: ActivityLog[];
   images: ItemImage[];
   settlements: Settlement[];
+  barDebtors: BarDebtor[];
+  barProducts: BarProduct[];
+  barLedgerEntries: BarLedgerEntry[];
+  barLedgerItems: BarLedgerItem[];
+  barLedgerPayments: BarLedgerPayment[];
+  barCreditTransactions: BarCreditTransaction[];
+  barLedgerEvents: BarLedgerEvent[];
 }
 
 export const SETTLEMENT_STATUS_META: Record<SettlementStatus, { label: string; icon: string }> = {

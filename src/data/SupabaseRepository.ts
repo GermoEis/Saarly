@@ -3,7 +3,7 @@ import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
-import { Delivery, DemoState, GroupInvite, GroupMembership, ItemImage, Settlement } from '@/types/domain';
+import { BarLedgerEntryInput, BarLedgerPaymentInput, BarPrepaymentInput, BarProductInput, Delivery, DemoState, GroupInvite, GroupMembership, ItemImage, Settlement } from '@/types/domain';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -151,7 +151,7 @@ export class SupabaseRepository {
     const client = this.client();
     const { error: purgeError } = await client.rpc('purge_group_trash', { target_group: groupId });
     if (purgeError && !purgeError.message.includes('Could not find the function')) throw purgeError;
-    const [profiles, groups, members, lists, categories, templates, items, assignments, attempts, deliveries, deliveryItems, notes, notifications, activity, images, settlements] = await Promise.all([
+    const [profiles, groups, members, lists, categories, templates, items, assignments, attempts, deliveries, deliveryItems, notes, notifications, activity, images, settlements, barDebtors, barProducts, barEntries, barItems, barPayments, barCredits, barEvents] = await Promise.all([
       client.from('profiles').select('*'), client.from('groups').select('*').eq('id', groupId),
       client.from('group_members').select('*').eq('group_id', groupId),
       client.from('shopping_lists').select('*').eq('group_id', groupId),
@@ -166,8 +166,15 @@ export class SupabaseRepository {
       client.from('activity_log').select('*').eq('group_id', groupId),
       client.from('item_images').select('*, items!inner(shopping_lists!inner(group_id))').eq('items.shopping_lists.group_id', groupId).order('updated_at', { ascending: false }),
       client.from('settlements').select('*').eq('group_id', groupId).order('created_at', { ascending: false }),
+      client.from('bar_debtors').select('*').eq('group_id', groupId).order('name'),
+      client.from('bar_products').select('*').eq('group_id', groupId).order('name'),
+      client.from('bar_ledger_entries').select('*').eq('group_id', groupId).order('occurred_at', { ascending: false }),
+      client.from('bar_ledger_items').select('*, bar_ledger_entries!inner(group_id)').eq('bar_ledger_entries.group_id', groupId),
+      client.from('bar_ledger_payments').select('*, bar_ledger_entries!inner(group_id)').eq('bar_ledger_entries.group_id', groupId).order('paid_at', { ascending: false }),
+      client.from('bar_credit_transactions').select('*').eq('group_id', groupId).order('occurred_at', { ascending: false }),
+      client.from('bar_ledger_events').select('*, bar_ledger_entries!inner(group_id)').eq('bar_ledger_entries.group_id', groupId).order('created_at', { ascending: false }),
     ]);
-    const failed = [profiles, groups, members, lists, categories, templates, items, assignments, attempts, deliveries, deliveryItems, notes, notifications, activity, images, settlements].find((result) => result.error);
+    const failed = [profiles, groups, members, lists, categories, templates, items, assignments, attempts, deliveries, deliveryItems, notes, notifications, activity, images, settlements, barDebtors, barProducts, barEntries, barItems, barPayments, barCredits, barEvents].find((result) => result.error);
     if (failed?.error) throw failed.error;
     const clean = <T extends Record<string, unknown>>(rows: T[] | null, relations: string[]) => (rows ?? []).map((row) => { const result = { ...row }; relations.forEach((key) => delete result[key]); return result; });
     const cleanImages = clean(images.data, ['items']) as ItemImage[];
@@ -186,6 +193,10 @@ export class SupabaseRepository {
       deliveries: clean(deliveries.data, ['shopping_lists']), deliveryItems: clean(deliveryItems.data, ['deliveries']),
       notes: notes.data ?? [], notifications: notifications.data ?? [], activity: activity.data ?? [], images: hydratedImages,
       settlements: settlements.data ?? [],
+      barDebtors: barDebtors.data ?? [], barProducts: barProducts.data ?? [], barLedgerEntries: barEntries.data ?? [],
+      barLedgerItems: clean(barItems.data, ['bar_ledger_entries']), barLedgerPayments: clean(barPayments.data, ['bar_ledger_entries']),
+      barCreditTransactions: barCredits.data ?? [],
+      barLedgerEvents: clean(barEvents.data, ['bar_ledger_entries']),
     } as Partial<DemoState>;
   }
 
@@ -220,10 +231,13 @@ export class SupabaseRepository {
   async deleteList(id: string) { const { error } = await this.client().rpc('trash_shopping_list', { target_list: id }); if (error) throw error; }
   async restoreList(id: string) { const { error } = await this.client().rpc('restore_trashed_shopping_list', { target_list: id }); if (error) throw error; }
   async createCategory(listId: string, groupId: string, userId: string, name: string, sortOrder: number) { const { error } = await this.client().from('categories').insert({ list_id: listId, name, sort_order: sortOrder }); if (error) throw error; const { error: templateError } = await this.client().from('category_templates').upsert({ group_id: groupId, created_by: userId, name, sort_order: sortOrder }, { onConflict: 'group_id,name', ignoreDuplicates: true }); if (templateError) throw templateError; }
+  async createSharedCategory(groupId: string, name: string) { const { error } = await this.client().rpc('create_shared_category', { target_group: groupId, category_name: name }); if (error) throw error; }
+  async deleteSharedCategory(groupId: string, name: string) { const { error } = await this.client().rpc('delete_shared_category', { target_group: groupId, category_name: name }); if (error) throw error; }
+  async assignItemsCategory(groupId: string, itemIds: string[], name: string) { const { error } = await this.client().rpc('assign_items_category', { target_group: groupId, target_items: itemIds, category_name: name }); if (error) throw error; }
   async updateCategory(id: string, values: Record<string, unknown>) { const { error } = await this.client().from('categories').update(values).eq('id', id); if (error) throw error; }
   async createItem(values: Record<string, unknown>) { const { data, error } = await this.client().from('items').insert(values).select('id').single(); if (error) throw error; return data.id as string; }
-  async createQuickItem(groupId: string, values: { name: string; quantity: number; unit?: string; note?: string }) {
-    const { data, error } = await this.client().rpc('create_quick_item', { target_group: groupId, item_name: values.name, item_quantity: values.quantity, item_unit: values.unit ?? null, item_note: values.note ?? null });
+  async createQuickItem(groupId: string, values: { name: string; quantity: number; unit?: string; note?: string; category_name?: string }) {
+    const { data, error } = await this.client().rpc('create_quick_item', { target_group: groupId, item_name: values.name, item_quantity: values.quantity, item_unit: values.unit ?? null, item_note: values.note ?? null, item_category_name: values.category_name ?? null });
     if (error) throw error; return data as string;
   }
   async updateItem(id: string, values: Record<string, unknown>) { const { error } = await this.client().from('items').update(values).eq('id', id); if (error) throw error; }
@@ -247,11 +261,56 @@ export class SupabaseRepository {
   async markSettlementPaid(id: string) { const { data, error } = await this.client().rpc('mark_settlement_paid', { target_settlement: id }); if (error) throw this.settlementError(error.message); return data; }
   async confirmSettlementPaid(id: string) { const { data, error } = await this.client().rpc('confirm_settlement_paid', { target_settlement: id }); if (error) throw this.settlementError(error.message); return data; }
   async cancelSettlement(id: string) { const { data, error } = await this.client().rpc('cancel_settlement', { target_settlement: id }); if (error) throw this.settlementError(error.message); return data; }
+  private barLedgerError(message: string) {
+    if (message.includes('bar_permission_denied') || message.includes('group_member_required')) return new Error('Sul ei ole lubatud seda vihikukirjet muuta.');
+    if (message.includes('bar_entry_not_found')) return new Error('Vihikukirjet ei leitud.');
+    if (message.includes('bar_debtor_not_found')) return new Error('Valitud inimest ei leitud.');
+    if (message.includes('bar_product_not_found')) return new Error('Valitud toodet ei leitud.');
+    if (message.includes('bar_product_duplicate')) return new Error('Sellise nimega toode on juba olemas.');
+    if (message.includes('bar_total_below_paid')) return new Error('Uus summa ei saa olla väiksem juba tasutud summast. Tühista esmalt vigane makse.');
+    if (message.includes('bar_overpayment')) return new Error('Makse ei saa olla suurem kui tasumata jääk.');
+    if (message.includes('bar_entry_cancelled')) return new Error('Tühistatud kirjet ei saa muuta.');
+    if (message.includes('bar_entry_not_open')) return new Error('Sellele kirjele ei saa praegu makset lisada.');
+    if (message.includes('bar_payment_already_voided')) return new Error('Makse on juba tühistatud.');
+    if (message.includes('bar_prepayment_already_used')) return new Error('Ettemaksest on juba osa kasutatud. Tühista esmalt vastav ost või ettemakse kasutus.');
+    if (message.includes('bar_credit_already_voided')) return new Error('Ettemakse on juba tühistatud.');
+    if (message.includes('bar_credit_not_found')) return new Error('Ettemakset ei leitud.');
+    if (message.includes('invalid_')) return new Error('Kontrolli sisestatud nime, kogust ja summasid.');
+    return new Error(message);
+  }
+  async createBarLedgerEntry(groupId: string, input: BarLedgerEntryInput) {
+    const { data, error } = await this.client().rpc('create_bar_ledger_entry', { target_group: groupId, target_debtor: input.debtor_id ?? null, debtor_name: input.debtor_name, debtor_contact: input.debtor_contact ?? '', entry_occurred_at: input.occurred_at, entry_note: input.note ?? '', entry_items: input.items, entry_payment_method: input.payment_method ?? 'cash' });
+    if (error) throw this.barLedgerError(error.message); return data;
+  }
+  async updateBarLedgerEntry(id: string, input: BarLedgerEntryInput) {
+    const { data, error } = await this.client().rpc('update_bar_ledger_entry', { target_entry: id, target_debtor: input.debtor_id ?? null, debtor_name: input.debtor_name, debtor_contact: input.debtor_contact ?? '', entry_occurred_at: input.occurred_at, entry_note: input.note ?? '', entry_items: input.items, entry_payment_method: input.payment_method ?? 'cash' });
+    if (error) throw this.barLedgerError(error.message); return data;
+  }
+  async recordBarLedgerPayment(id: string, input: BarLedgerPaymentInput) {
+    const { data, error } = await this.client().rpc('record_bar_ledger_payment', { target_entry: id, amount_value: input.amount, payment_paid_at: input.paid_at, payment_note: input.note ?? '' });
+    if (error) throw this.barLedgerError(error.message); return data;
+  }
+  async voidBarLedgerPayment(id: string) { const { data, error } = await this.client().rpc('void_bar_ledger_payment', { target_payment: id }); if (error) throw this.barLedgerError(error.message); return data; }
+  async recordBarPrepayment(groupId: string, input: BarPrepaymentInput) {
+    const { data, error } = await this.client().rpc('record_bar_prepayment', { target_group: groupId, target_owner: input.owner_id ?? null, target_debtor: input.debtor_id ?? null, debtor_name: input.debtor_name, debtor_contact: input.debtor_contact ?? '', amount_value: input.amount, prepayment_occurred_at: input.occurred_at, prepayment_note: input.note ?? '', prepayment_method: input.payment_method ?? 'cash' });
+    if (error) throw this.barLedgerError(error.message); return data;
+  }
+  async voidBarPrepayment(id: string) { const { data, error } = await this.client().rpc('void_bar_prepayment', { target_credit: id }); if (error) throw this.barLedgerError(error.message); return data; }
+  async cancelBarLedgerEntry(id: string) { const { data, error } = await this.client().rpc('cancel_bar_ledger_entry', { target_entry: id }); if (error) throw this.barLedgerError(error.message); return data; }
+  async saveBarProduct(groupId: string, input: BarProductInput) {
+    const { data, error } = await this.client().rpc('upsert_bar_product', { target_group: groupId, target_product: input.id ?? null, product_name: input.name, price_value: input.unit_price, product_active: input.active ?? true });
+    if (error) throw this.barLedgerError(error.message); return data;
+  }
   async markNotificationsRead(userId: string) { const { error } = await this.client().from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId).is('read_at', null); if (error) throw error; }
   async saveWebPushSubscription(userId: string, subscription: PushSubscription) { const { error } = await this.client().from('push_tokens').upsert({ user_id: userId, token: JSON.stringify(subscription.toJSON()), platform: 'web' }, { onConflict: 'token' }); if (error) throw error; }
   async upsertDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().from('deliveries').upsert(values, { onConflict: 'id' }).select().single(); if (error) throw error; return data as Delivery; }
   async addDeliveryItems(deliveryId: string, itemIds: string[]) { if (!itemIds.length) return; const { error } = await this.client().from('delivery_items').upsert(itemIds.map((item_id) => ({ delivery_id: deliveryId, item_id })), { onConflict: 'delivery_id,item_id', ignoreDuplicates: true }); if (error) throw error; }
   async completeDelivery(values: Record<string, unknown>) { const { data, error } = await this.client().rpc('complete_delivery', { target_list: values.target_list, target_delivery: values.delivery_id ?? null, delivery_ship: values.ship_name, delivery_date: values.departure_date, delivery_time: values.departure_time ?? null, delivery_port: values.port, delivery_place: values.handover_place, delivery_note: values.note ?? null }); if (error) throw error; return data; }
+  async removeItemFromDelivery(itemId: string) {
+    await this.undoItemStatus(itemId, 'purchased');
+    const { error } = await this.client().from('delivery_items').delete().eq('item_id', itemId);
+    if (error) throw error;
+  }
   async undoCompletedDelivery(id: string) { const { error } = await this.client().rpc('undo_completed_delivery', { target_delivery: id }); if (error) throw error; }
   subscribe(groupId: string, refresh: () => void) {
     const channel = this.client().channel(`saarly:${groupId}`)
@@ -262,6 +321,13 @@ export class SupabaseRepository {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `group_id=eq.${groupId}` }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_log', filter: `group_id=eq.${groupId}` }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settlements', filter: `group_id=eq.${groupId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bar_debtors', filter: `group_id=eq.${groupId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bar_products', filter: `group_id=eq.${groupId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bar_ledger_entries', filter: `group_id=eq.${groupId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bar_ledger_items' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bar_ledger_payments' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bar_credit_transactions', filter: `group_id=eq.${groupId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bar_ledger_events' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, refresh)

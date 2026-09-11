@@ -2,22 +2,25 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Alert, Platform } from 'react-native';
 import * as Network from 'expo-network';
 import { createDemoState } from '@/data/demoSeed';
-import { acceptItem, categoriesForNewList, claimItem, declineItem, releaseAllItems, removeBuyerMember, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '@/data/business';
+import { acceptItem, categoriesForNewList, claimItem, declineItem, releaseAllItems, removeBuyerMember, removeItemFromDelivery, saveDeliveryInDemo, setItemOutcome, setProfileThemePreference, statusForAssignment, updateShoppingList } from '@/data/business';
 import { loadDemo, saveDemo } from '@/data/storage';
 import { hasSupabaseConfig, supabase } from '@/data/supabase';
 import { SupabaseRepository } from '@/data/SupabaseRepository';
 import { canManageShoppingContent } from '@/data/access';
 import { loadActiveGroupId, saveActiveGroupId, selectActiveGroupId } from '@/data/groups';
 import { cancelSettlementInDemo, confirmSettlementPaidInDemo, createSettlementInDemo, markSettlementPaidInDemo } from '@/data/settlements';
+import { cancelBarLedgerEntryInDemo, createBarLedgerEntryInDemo, mergeDuplicateBarDebtorsInDemo, recordBarPaymentInDemo, recordBarPrepaymentInDemo, saveBarProductInDemo, updateBarLedgerEntryInDemo, voidBarPaymentInDemo, voidBarPrepaymentInDemo } from '@/data/barLedger';
 import { moveItemToTrash, moveListToTrash, purgeExpiredTrash, restoreItemFromTrash, restoreListFromTrash } from '@/data/trash';
-import { Category, Delivery, DemoState, GroupInvite, GroupMembership, Item, Note, Settlement, ThemeMode } from '@/types/domain';
+import { BarLedgerEntryInput, BarLedgerPaymentInput, BarPrepaymentInput, BarProductInput, Category, Delivery, DemoState, GroupInvite, GroupMembership, Item, Note, Settlement, ThemeMode } from '@/types/domain';
 import { colorsFor, ThemeColors } from '@/theme';
 import { requestWebNotificationPermission, showDemoWebNotification, subscribeToWebPush, WebNotificationPermission } from '@/services/webPush';
 import { applyOfflinePurchase, CloudWorkspaceCache, loadCloudWorkspaceCache, loadOfflineActions, OfflinePurchaseAction, saveCloudWorkspaceCache, saveOfflineActions } from '@/data/offlineQueue';
 import { combinedQuantity } from '@/data/duplicates';
 import { isActiveShipment } from '@/data/departures';
+import { assignCategoryInDemo, deleteSharedCategoryInDemo, normalizeCategoryName } from '@/data/itemCategories';
 
 type NewItem = Pick<Item, 'name' | 'quantity' | 'category_id'> & Partial<Pick<Item, 'unit' | 'note' | 'assigned_to'>>;
+type QuickItemInput = Pick<Item, 'name' | 'quantity'> & Partial<Pick<Item, 'unit' | 'note'>> & { category_name?: string };
 type NewItemPhoto = { uri: string; mimeType?: string | null; base64?: string | null };
 type AuthAccount = { email?: string; displayName?: string; isAnonymous: boolean } | null;
 interface AppContextValue {
@@ -62,17 +65,21 @@ interface AppContextValue {
   decline: (itemId: string) => void;
   releaseAll: () => void;
   outcome: (itemId: string, value: 'purchased' | 'unavailable' | 'delivered', note?: string) => Promise<boolean>;
+  removeFromDelivery: (itemId: string) => Promise<boolean>;
   addList: (name: string, description?: string) => Promise<string>;
   updateList: (id: string, name: string, description?: string) => Promise<void>;
   archiveList: (id: string) => void;
   deleteList: (id: string) => void;
   restoreList: (id: string) => void;
   addCategory: (listId: string, name: string) => void;
+  addSharedCategory: (name: string) => Promise<boolean>;
+  deleteSharedCategory: (name: string) => Promise<boolean>;
+  assignItemsCategory: (itemIds: string[], categoryName: string) => Promise<boolean>;
   toggleCategory: (id: string) => void;
   renameCategory: (id: string, name: string) => void;
   reorderCategory: (id: string, direction: -1 | 1) => void;
   addItem: (listId: string, input: NewItem, photo?: NewItemPhoto) => Promise<boolean>;
-  addQuickItem: (input: Pick<Item, 'name' | 'quantity'> & Partial<Pick<Item, 'unit' | 'note'>>, photo?: NewItemPhoto) => Promise<boolean>;
+  addQuickItem: (input: QuickItemInput, photo?: NewItemPhoto) => Promise<boolean>;
   increaseItemQuantity: (itemId: string, addition: number) => Promise<boolean>;
   updateItem: (id: string, values: Partial<Pick<Item, 'name' | 'quantity' | 'unit' | 'note' | 'category_id' | 'assigned_to'>>) => void;
   deleteItem: (id: string) => void;
@@ -88,6 +95,14 @@ interface AppContextValue {
   markSettlementPaid: (id: string) => Promise<void>;
   confirmSettlementPaid: (id: string) => Promise<void>;
   cancelSettlement: (id: string) => Promise<void>;
+  createBarLedgerEntry: (input: BarLedgerEntryInput) => Promise<void>;
+  updateBarLedgerEntry: (id: string, input: BarLedgerEntryInput) => Promise<void>;
+  recordBarLedgerPayment: (id: string, input: BarLedgerPaymentInput) => Promise<void>;
+  voidBarLedgerPayment: (id: string) => Promise<void>;
+  recordBarPrepayment: (input: BarPrepaymentInput) => Promise<void>;
+  voidBarPrepayment: (id: string) => Promise<void>;
+  cancelBarLedgerEntry: (id: string) => Promise<void>;
+  saveBarProduct: (input: BarProductInput) => Promise<void>;
 }
 
 const Context = createContext<AppContextValue | null>(null);
@@ -95,6 +110,17 @@ const uid = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toStrin
 const now = () => new Date().toISOString();
 const cloud = new SupabaseRepository();
 const DEMO_SECURITY_CODE = 'DEMO2026';
+const withBarLedgerState = (value: DemoState): DemoState => mergeDuplicateBarDebtorsInDemo({
+  ...value,
+  version: 5,
+  barDebtors: value.barDebtors ?? [],
+  barProducts: value.barProducts ?? [],
+  barLedgerEntries: value.barLedgerEntries ?? [],
+  barLedgerItems: value.barLedgerItems ?? [],
+  barLedgerPayments: value.barLedgerPayments ?? [],
+  barCreditTransactions: value.barCreditTransactions ?? [],
+  barLedgerEvents: value.barLedgerEvents ?? [],
+});
 
 function accountFromUser(user: { email?: string | null; is_anonymous?: boolean; user_metadata?: { display_name?: unknown; full_name?: unknown; name?: unknown } } | null | undefined): AuthAccount {
   if (!user) return null;
@@ -155,7 +181,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
       cloudUnsubscribe.current?.(); cloudUnsubscribe.current = null;
       cloudGroupId.current = null; setActiveGroupId(null); setGroupInvites([]);
       await saveActiveGroupId(activeUser, null);
-      const emptyState = { ...createDemoState(), currentUserId: activeUser, profiles: [], groups: [], groupMembers: [], lists: [], categories: [], categoryTemplates: [], items: [], assignments: [], attempts: [], deliveries: [], deliveryItems: [], notes: [], notifications: [], activity: [], images: [], settlements: [] };
+      const emptyState = { ...createDemoState(), currentUserId: activeUser, profiles: [], groups: [], groupMembers: [], lists: [], categories: [], categoryTemplates: [], items: [], assignments: [], attempts: [], deliveries: [], deliveryItems: [], notes: [], notifications: [], activity: [], images: [], settlements: [], barDebtors: [], barProducts: [], barLedgerEntries: [], barLedgerItems: [], barLedgerPayments: [], barCreditTransactions: [], barLedgerEvents: [] };
       stateRef.current = emptyState; setState(emptyState);
       await saveCloudWorkspaceCache({ userId: activeUser, activeGroupId: null, groups, invites: [], state: emptyState, savedAt: now() });
       return;
@@ -170,7 +196,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     }
     cloudGroupId.current = groupId; setActiveGroupId(groupId); setGroupInvites(invites);
     await saveActiveGroupId(activeUser, groupId);
-    const nextState = { ...createDemoState(), ...data, currentUserId: activeUser };
+    const nextState = withBarLedgerState({ ...createDemoState(), ...data, currentUserId: activeUser });
     stateRef.current = nextState; setState(nextState);
     await saveCloudWorkspaceCache({ userId: activeUser, activeGroupId: groupId, groups, invites, state: nextState, savedAt: now() });
   }, []);
@@ -197,7 +223,8 @@ export function AppProvider({ children }: React.PropsWithChildren) {
             const cached = await loadCloudWorkspaceCache(user.id);
             if (cached) {
               setAvailableGroups(cached.groups); setActiveGroupId(cached.activeGroupId); setGroupInvites(cached.invites);
-              cloudGroupId.current = cached.activeGroupId; stateRef.current = cached.state; setState(cached.state);
+              const cachedState = withBarLedgerState(cached.state);
+              cloudGroupId.current = cached.activeGroupId; stateRef.current = cachedState; setState(cachedState);
             }
           }
         }
@@ -217,12 +244,12 @@ export function AppProvider({ children }: React.PropsWithChildren) {
       return () => { authListener.subscription.unsubscribe(); cloudUnsubscribe.current?.(); cloudUnsubscribe.current = null; };
     }
     loadDemo().then((saved) => {
-      if (saved?.version === 3) setState(purgeExpiredTrash({ ...saved, settlements: saved.settlements ?? [], items: saved.items.map((item) => item.status === 'assigned' ? { ...item, status: 'accepted' } : item), assignments: saved.assignments.map((assignment) => assignment.status === 'pending' ? { ...assignment, status: 'accepted' } : assignment) }));
+      if (saved?.version && saved.version >= 3) setState(purgeExpiredTrash(withBarLedgerState({ ...saved, settlements: saved.settlements ?? [], items: saved.items.map((item) => item.status === 'assigned' ? { ...item, status: 'accepted' } : item), assignments: saved.assignments.map((assignment) => assignment.status === 'pending' ? { ...assignment, status: 'accepted' } : assignment) })));
       setReady(true);
     });
     if (Platform.OS === 'web' && typeof BroadcastChannel !== 'undefined') {
       channel.current = new BroadcastChannel('saarly-demo-sync');
-      channel.current.onmessage = (event) => { if (event.data?.type === 'state') setState((current) => ({ ...event.data.state, settlements: event.data.state.settlements ?? [], currentUserId: current.currentUserId })); };
+      channel.current.onmessage = (event) => { if (event.data?.type === 'state') setState((current) => withBarLedgerState({ ...event.data.state, settlements: event.data.state.settlements ?? [], currentUserId: current.currentUserId })); };
     }
     return () => { channel.current?.close(); if (undoTimer.current) clearTimeout(undoTimer.current); };
   }, [refreshCloud]);
@@ -465,6 +492,14 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     else update((current) => setItemOutcome(current, itemId, current.currentUserId!, value, note));
     return true;
   };
+  const removeFromDelivery = async (itemId: string) => {
+    if (hasSupabaseConfig) {
+      try { await cloud.removeItemFromDelivery(itemId); await refreshCloud(); return true; }
+      catch (error) { show(error instanceof Error ? error.message : 'Toote laevalt eemaldamine ebaõnnestus.'); return false; }
+    }
+    update((current) => removeItemFromDelivery(current, itemId, current.currentUserId!));
+    return true;
+  };
 
   const addList = async (name: string, description?: string) => {
     if (hasSupabaseConfig) { const id = await cloud.createList(cloudGroupId.current!, state.currentUserId!, name, description); await refreshCloud(); return id; }
@@ -493,6 +528,34 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     const template = { id: uid('template'), group_id: 'family', created_by: current.currentUserId!, name: name.trim(), sort_order: current.categoryTemplates.length, created_at: at, updated_at: at };
     return { ...current, categories: [...current.categories, category], categoryTemplates: exists ? current.categoryTemplates : [...current.categoryTemplates, template] };
   }); };
+  const addSharedCategory = async (name: string) => {
+    const cleanName = name.trim(); if (!cleanName || !state.currentUserId) return false;
+    try {
+      if (hasSupabaseConfig) { await cloud.createSharedCategory(cloudGroupId.current!, cleanName); await refreshCloud(); return true; }
+      update((current) => {
+        if (current.categoryTemplates.some((template) => normalizeCategoryName(template.name) === normalizeCategoryName(cleanName))) return current;
+        const at = now(); return { ...current, categoryTemplates: [...current.categoryTemplates, { id: uid('template'), group_id: current.groups[0]?.id ?? 'family', created_by: current.currentUserId!, name: cleanName, sort_order: current.categoryTemplates.length, created_at: at, updated_at: at }] };
+      });
+      return true;
+    } catch (error) { show(error instanceof Error ? error.message : 'Kategooria lisamine ebaõnnestus.'); return false; }
+  };
+  const deleteSharedCategory = async (name: string) => {
+    const cleanName = name.trim();
+    if (!cleanName || normalizeCategoryName(cleanName) === normalizeCategoryName('Üldine') || !state.currentUserId) return false;
+    try {
+      if (hasSupabaseConfig) { await cloud.deleteSharedCategory(cloudGroupId.current!, cleanName); await refreshCloud(); return true; }
+      update((current) => deleteSharedCategoryInDemo(current, cleanName));
+      return true;
+    } catch (error) { show(error instanceof Error ? error.message : 'Kategooria kustutamine ebaõnnestus.'); return false; }
+  };
+  const assignItemsCategory = async (itemIds: string[], categoryName: string) => {
+    const cleanName = categoryName.trim(); if (!itemIds.length || !cleanName || !state.currentUserId) return false;
+    try {
+      if (hasSupabaseConfig) { await cloud.assignItemsCategory(cloudGroupId.current!, itemIds, cleanName); await refreshCloud(); return true; }
+      update((current) => assignCategoryInDemo(current, itemIds, cleanName, current.currentUserId!));
+      return true;
+    } catch (error) { show(error instanceof Error ? error.message : 'Kategooria määramine ebaõnnestus.'); return false; }
+  };
   const toggleCategory = (id: string) => update((current) => ({ ...current, categories: current.categories.map((category) => category.id === id ? { ...category, collapsed: !category.collapsed, updated_at: now() } : category) }));
   const renameCategory = (id: string, name: string) => { if (hasSupabaseConfig) void cloud.updateCategory(id, { name }).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => ({ ...current, categories: current.categories.map((category) => category.id === id ? { ...category, name, updated_at: now() } : category) })); };
   const reorderCategory = (id: string, direction: -1 | 1) => { const targetNow = state.categories.find((category) => category.id === id); const orderedNow = state.categories.filter((category) => category.list_id === targetNow?.list_id).sort((a, b) => a.sort_order - b.sort_order); const swapNow = orderedNow[orderedNow.findIndex((category) => category.id === id) + direction]; if (hasSupabaseConfig) { if (targetNow && swapNow) void Promise.all([cloud.updateCategory(id, { sort_order: swapNow.sort_order }), cloud.updateCategory(swapNow.id, { sort_order: targetNow.sort_order })]).then(() => refreshCloud()).catch((error) => show(error.message)); return; } update((current) => {
@@ -522,7 +585,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     const image = photo ? { id: uid('image'), item_id: id, created_by: current.currentUserId!, storage_path: `demo/${id}/${Date.now()}`, preview_uri: previewUri, created_at: at, updated_at: at } : null;
     return { ...current, items: [...current.items, item], assignments: assignment ? [...current.assignments, assignment] : current.assignments, notifications: notification ? [notification, ...current.notifications] : current.notifications, activity: [...current.activity, activity], images: image ? [...current.images, image] : current.images };
   }); return true; };
-  const addQuickItem = async (input: Pick<Item, 'name' | 'quantity'> & Partial<Pick<Item, 'unit' | 'note'>>, photo?: NewItemPhoto) => { if (hasSupabaseConfig) {
+  const addQuickItem = async (input: QuickItemInput, photo?: NewItemPhoto) => { if (hasSupabaseConfig) {
     let itemId: string | undefined;
     try {
       itemId = await cloud.createQuickItem(cloudGroupId.current!, input);
@@ -538,16 +601,19 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     const at = now();
     const existingList = current.lists.find((list) => list.is_quick_list);
     const listId = existingList?.id ?? uid('quick-list');
-    const existingCategory = current.categories.find((category) => category.list_id === listId);
+    const requestedCategory = input.category_name?.trim();
+    const existingCategory = current.categories.find((category) => category.list_id === listId && (!requestedCategory || normalizeCategoryName(category.name) === normalizeCategoryName(requestedCategory))) ?? (!requestedCategory ? current.categories.find((category) => category.list_id === listId) : undefined);
     const categoryId = existingCategory?.id ?? uid('quick-category');
     const id = uid('item');
     const list = existingList ?? { id: listId, group_id: current.groups[0]?.id ?? 'family', created_by: current.currentUserId!, name: 'Jooksev list', description: 'Ilma eraldi ostunimekirjata lisatud kaubad', is_quick_list: true, created_at: at, updated_at: at };
-    const category = existingCategory ?? { id: categoryId, list_id: listId, name: 'Üldine', sort_order: 0, created_at: at, updated_at: at };
+    const category = existingCategory ?? { id: categoryId, list_id: listId, name: requestedCategory || 'Üldine', sort_order: current.categories.filter((value) => value.list_id === listId).length, created_at: at, updated_at: at };
     const item: Item = { id, list_id: listId, category_id: categoryId, created_by: current.currentUserId!, name: input.name, quantity: input.quantity, unit: input.unit, note: input.note, status: 'unassigned', searched_before: false, created_at: at, updated_at: at };
     const activity = { id: uid('activity'), group_id: current.groups[0]?.id ?? 'family', actor_id: current.currentUserId!, list_id: listId, item_id: id, action: 'Lisas toote otse jooksvasse listi', new_status: 'unassigned' as const, created_at: at, updated_at: at };
     const previewUri = photo?.base64 ? `data:${photo.mimeType ?? 'image/jpeg'};base64,${photo.base64}` : photo?.uri;
     const image = photo ? { id: uid('image'), item_id: id, created_by: current.currentUserId!, storage_path: `demo/${id}/${Date.now()}`, preview_uri: previewUri, created_at: at, updated_at: at } : null;
-    return { ...current, lists: existingList ? current.lists : [...current.lists, list], categories: existingCategory ? current.categories : [...current.categories, category], items: [...current.items, item], activity: [...current.activity, activity], images: image ? [...current.images, image] : current.images };
+    const hasTemplate = current.categoryTemplates.some((template) => normalizeCategoryName(template.name) === normalizeCategoryName(category.name));
+    const template = { id: uid('template'), group_id: current.groups[0]?.id ?? 'family', created_by: current.currentUserId!, name: category.name, sort_order: current.categoryTemplates.length, created_at: at, updated_at: at };
+    return { ...current, lists: existingList ? current.lists : [...current.lists, list], categories: existingCategory ? current.categories : [...current.categories, category], categoryTemplates: hasTemplate ? current.categoryTemplates : [...current.categoryTemplates, template], items: [...current.items, item], activity: [...current.activity, activity], images: image ? [...current.images, image] : current.images };
   }); return true; };
   const increaseItemQuantity = async (itemId: string, addition: number) => {
     const item = stateRef.current.items.find((value) => value.id === itemId && !value.deleted_at);
@@ -642,6 +708,46 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     if (hasSupabaseConfig) { await cloud.cancelSettlement(id); await refreshCloud(); return; }
     update((current) => cancelSettlementInDemo(current, id, current.currentUserId!));
   };
+  const createBarLedgerEntry = async (input: BarLedgerEntryInput) => {
+    if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
+    if (hasSupabaseConfig) { await cloud.createBarLedgerEntry(cloudGroupId.current!, input); await refreshCloud(); return; }
+    update((current) => createBarLedgerEntryInDemo(current, current.currentUserId!, input));
+  };
+  const updateBarLedgerEntry = async (id: string, input: BarLedgerEntryInput) => {
+    if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
+    if (hasSupabaseConfig) { await cloud.updateBarLedgerEntry(id, input); await refreshCloud(); return; }
+    update((current) => updateBarLedgerEntryInDemo(current, current.currentUserId!, id, input));
+  };
+  const recordBarLedgerPayment = async (id: string, input: BarLedgerPaymentInput) => {
+    if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
+    if (hasSupabaseConfig) { await cloud.recordBarLedgerPayment(id, input); await refreshCloud(); return; }
+    update((current) => recordBarPaymentInDemo(current, current.currentUserId!, id, input));
+  };
+  const voidBarLedgerPayment = async (id: string) => {
+    if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
+    if (hasSupabaseConfig) { await cloud.voidBarLedgerPayment(id); await refreshCloud(); return; }
+    update((current) => voidBarPaymentInDemo(current, current.currentUserId!, id));
+  };
+  const recordBarPrepayment = async (input: BarPrepaymentInput) => {
+    if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
+    if (hasSupabaseConfig) { await cloud.recordBarPrepayment(cloudGroupId.current!, input); await refreshCloud(); return; }
+    update((current) => recordBarPrepaymentInDemo(current, current.currentUserId!, input));
+  };
+  const voidBarPrepayment = async (id: string) => {
+    if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
+    if (hasSupabaseConfig) { await cloud.voidBarPrepayment(id); await refreshCloud(); return; }
+    update((current) => voidBarPrepaymentInDemo(current, current.currentUserId!, id));
+  };
+  const cancelBarLedgerEntry = async (id: string) => {
+    if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
+    if (hasSupabaseConfig) { await cloud.cancelBarLedgerEntry(id); await refreshCloud(); return; }
+    update((current) => cancelBarLedgerEntryInDemo(current, current.currentUserId!, id));
+  };
+  const saveBarProduct = async (input: BarProductInput) => {
+    if (!state.currentUserId) throw new Error('Kasutajat ei leitud.');
+    if (hasSupabaseConfig) { await cloud.saveBarProduct(cloudGroupId.current!, input); await refreshCloud(); return; }
+    update((current) => saveBarProductInDemo(current, current.currentUserId!, input));
+  };
 
   const currentUser = state.profiles.find((profile) => profile.id === state.currentUserId);
   const themeMode: ThemeMode = currentUser?.theme_preference === 'dark' ? 'dark' : 'light';
@@ -651,7 +757,7 @@ export function AppProvider({ children }: React.PropsWithChildren) {
   const isCreator = canManageShoppingContent(state, state.currentUserId);
   const isAdmin = state.groupMembers.some((member) => member.profile_id === state.currentUserId && member.role === 'admin');
   const demoGroups: GroupMembership[] = state.groups.map((group) => ({ ...group, role: state.groupMembers.find((member) => member.group_id === group.id && member.profile_id === state.currentUserId)?.role ?? 'buyer' }));
-  const value: AppContextValue = { state, mode: hasSupabaseConfig ? 'supabase' : 'demo', ready, currentUser, isMember, isCreator, isAdmin, hasAuthSession: Boolean(authAccount), authEmail: authAccount?.email, authDisplayName: authAccount?.displayName, isAnonymousAccount: Boolean(authAccount?.isAnonymous), availableGroups: hasSupabaseConfig ? availableGroups : demoGroups, activeGroupId: hasSupabaseConfig ? activeGroupId : (state.groups[0]?.id ?? null), groupInvites, themeMode, themeColors, pendingUndo, isOnline, pendingOfflineActions, undoLastAction, enableWebNotifications, setThemeMode, renameGroup, removeMember, createGroup, switchGroup, createInvite, revokeInvite, signIn, signInEmail, registerEmail, linkEmailAccount, signInGoogle, joinGroup, signOut, resetDemo, claim, accept, decline, releaseAll, outcome, addList, updateList, archiveList, deleteList, restoreList, addCategory, toggleCategory, renameCategory, reorderCategory, addItem, addQuickItem, increaseItemQuantity, updateItem, deleteItem, restoreItem, markAllRead, addNote, updateNote, deleteNote, setItemImage, removeItemImage, saveDelivery, createSettlement, markSettlementPaid, confirmSettlementPaid, cancelSettlement };
+  const value: AppContextValue = { state, mode: hasSupabaseConfig ? 'supabase' : 'demo', ready, currentUser, isMember, isCreator, isAdmin, hasAuthSession: Boolean(authAccount), authEmail: authAccount?.email, authDisplayName: authAccount?.displayName, isAnonymousAccount: Boolean(authAccount?.isAnonymous), availableGroups: hasSupabaseConfig ? availableGroups : demoGroups, activeGroupId: hasSupabaseConfig ? activeGroupId : (state.groups[0]?.id ?? null), groupInvites, themeMode, themeColors, pendingUndo, isOnline, pendingOfflineActions, undoLastAction, enableWebNotifications, setThemeMode, renameGroup, removeMember, createGroup, switchGroup, createInvite, revokeInvite, signIn, signInEmail, registerEmail, linkEmailAccount, signInGoogle, joinGroup, signOut, resetDemo, claim, accept, decline, releaseAll, outcome, removeFromDelivery, addList, updateList, archiveList, deleteList, restoreList, addCategory, addSharedCategory, deleteSharedCategory, assignItemsCategory, toggleCategory, renameCategory, reorderCategory, addItem, addQuickItem, increaseItemQuantity, updateItem, deleteItem, restoreItem, markAllRead, addNote, updateNote, deleteNote, setItemImage, removeItemImage, saveDelivery, createSettlement, markSettlementPaid, confirmSettlementPaid, cancelSettlement, createBarLedgerEntry, updateBarLedgerEntry, recordBarLedgerPayment, voidBarLedgerPayment, recordBarPrepayment, voidBarPrepayment, cancelBarLedgerEntry, saveBarProduct };
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

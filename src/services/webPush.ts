@@ -17,7 +17,11 @@ export function isStandaloneWebApp() {
 
 export async function registerSaarlyServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!supported()) return null;
-  try { return await navigator.serviceWorker.register('/saarly-sw.js'); }
+  try {
+    const registration = await navigator.serviceWorker.register('/saarly-sw.js', { updateViaCache: 'none' });
+    await registration.update();
+    return registration;
+  }
   catch { return null; }
 }
 

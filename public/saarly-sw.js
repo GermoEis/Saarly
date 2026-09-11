@@ -1,6 +1,6 @@
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
-    const cache = await caches.open('saarly-app-v3');
+    const cache = await caches.open('saarly-app-v4');
     const root = await fetch('/', { cache: 'reload' });
     await cache.put('/', root.clone());
     const html = await root.text();
@@ -14,7 +14,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
-    await Promise.all(names.filter((name) => name.startsWith('saarly-app-') && name !== 'saarly-app-v3').map((name) => caches.delete(name)));
+    await Promise.all(names.filter((name) => name.startsWith('saarly-app-') && name !== 'saarly-app-v4').map((name) => caches.delete(name)));
     await self.clients.claim();
   })());
 });
@@ -24,7 +24,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   event.respondWith((async () => {
-    const cache = await caches.open('saarly-app-v3');
+    const cache = await caches.open('saarly-app-v4');
     if (event.request.mode === 'navigate') {
       try {
         const response = await fetch(event.request);

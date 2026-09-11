@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "expo lint",
-    "deploy": "npx expo export -p web && wrangler deploy",
+    "deploy": "npx expo export -p web && wrangler pages deploy dist --project-name saarly --branch main",
+    "deploy:worker": "npx expo export -p web && wrangler deploy",
     "preview": "npx expo export -p web && wrangler dev"
   },
   "dependencies": {
