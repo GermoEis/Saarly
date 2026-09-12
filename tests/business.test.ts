@@ -14,6 +14,8 @@ import { applyOfflinePurchase } from '../src/data/offlineQueue';
 import { departureTimesForDate, isActiveShipment, isDeliveredShipmentVisible } from '../src/data/departures';
 import { barDebtorCreditBalance, barDebtorSuggestions, barEntryPaid, barEntryRemaining, barEntryVisibleTo, barProductSuggestions, createBarLedgerEntryInDemo, recordBarPaymentInDemo, recordBarPrepaymentInDemo, saveBarProductInDemo, updateBarLedgerEntryInDemo, voidBarPaymentInDemo, voidBarPrepaymentInDemo } from '../src/data/barLedger';
 import { assignCategoryInDemo, deleteSharedCategoryInDemo, filterItemsByCategory, sortCategoryItems } from '../src/data/itemCategories';
+import { normalizeNoteUrl } from '../src/data/noteLinks';
+import { visibleShipLoads } from '../src/data/shipLoads';
 
 describe('Saarly põhivood', () => {
   it('laeva saadetis jääb aktiivseks ka siis, kui andmebaas tagastab kellaaja koos sekunditega', () => {
@@ -26,6 +28,25 @@ describe('Saarly põhivood', () => {
     const now = new Date('2026-08-20T17:30:00').getTime();
     expect(isDeliveredShipmentVisible({ departure_date: '2026-08-20', departure_time: '18:00', status: 'planned' } as never, now)).toBe(false);
     expect(isDeliveredShipmentVisible({ departure_date: '2026-08-20', departure_time: '18:00', status: 'delivered' } as never, now)).toBe(true);
+  });
+  it('sama laeva erinevad väljumised jäävad pealehel eraldi saadetisteks', () => {
+    const state = createDemoState();
+    const item = state.items[0];
+    const delivery = state.deliveries[0];
+    const deliveries = [
+      { ...delivery, id: 'delivery-a', ship_name: 'Strande', departure_date: '2026-08-20', departure_time: '18:00', status: 'delivered' as const },
+      { ...delivery, id: 'delivery-b', ship_name: 'Strande', departure_date: '2026-08-21', departure_time: '18:00', status: 'delivered' as const },
+    ];
+    const deliveredItem = { ...item, status: 'delivered' as const };
+    const loads = visibleShipLoads(deliveries, [{ id: 'link-a', delivery_id: 'delivery-a', item_id: item.id, created_at: '', updated_at: '' }, { id: 'link-b', delivery_id: 'delivery-b', item_id: item.id, created_at: '', updated_at: '' }], [deliveredItem], new Date('2026-08-20T12:00:00').getTime());
+    expect(loads).toHaveLength(2);
+    expect(loads.map((load) => load.departure)).toEqual(['20.08.2026 kell 18:00', '21.08.2026 kell 18:00']);
+  });
+  it('märkme veebiaadress normaliseeritakse ja vigane aadress lükatakse tagasi', () => {
+    expect(normalizeNoteUrl('saarly.pages.dev')).toBe('https://saarly.pages.dev/');
+    expect(normalizeNoteUrl('https://example.com/info')).toBe('https://example.com/info');
+    expect(normalizeNoteUrl('pole aadress')).toBeUndefined();
+    expect(normalizeNoteUrl('javascript:alert(1)')).toBeUndefined();
   });
   it('tänase päeva kellaajavalik ei paku juba möödunud kellaaegu', () => {
     const times = departureTimesForDate('2026-08-20', new Date('2026-08-20T13:36:00'));

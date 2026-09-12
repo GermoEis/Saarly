@@ -68,7 +68,7 @@ interface AppContextValue {
   removeFromDelivery: (itemId: string) => Promise<boolean>;
   addList: (name: string, description?: string) => Promise<string>;
   updateList: (id: string, name: string, description?: string) => Promise<void>;
-  archiveList: (id: string) => void;
+  archiveList: (id: string) => Promise<boolean>;
   deleteList: (id: string) => void;
   restoreList: (id: string) => void;
   addCategory: (listId: string, name: string) => void;
@@ -85,9 +85,9 @@ interface AppContextValue {
   deleteItem: (id: string) => void;
   restoreItem: (id: string) => void;
   markAllRead: () => void;
-  addNote: (input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url' | 'pinned'>>) => void;
-  updateNote: (id: string, input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url'>>) => void;
-  deleteNote: (id: string) => void;
+  addNote: (input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url' | 'pinned'>>) => Promise<boolean>;
+  updateNote: (id: string, input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url'>>) => Promise<boolean>;
+  deleteNote: (id: string) => Promise<boolean>;
   setItemImage: (itemId: string, uri: string, mimeType?: string | null, base64?: string | null) => Promise<void>;
   removeItemImage: (itemId: string) => Promise<void>;
   saveDelivery: (listId: string, input: Pick<Delivery, 'ship_name' | 'departure_date' | 'departure_time' | 'port' | 'handover_place'> & Partial<Pick<Delivery, 'note'>>, delivered?: boolean) => Promise<boolean>;
@@ -131,6 +131,7 @@ function accountFromUser(user: { email?: string | null; is_anonymous?: boolean; 
 
 const networkAvailable = (network: Network.NetworkState) => network.isConnected !== false && network.isInternetReachable !== false;
 const isNetworkFailure = (reason: unknown) => /network|fetch|internet|offline|ühendus/i.test(reason instanceof Error ? reason.message : String(reason));
+const reasonMessage = (reason: unknown, fallback: string) => reason instanceof Error ? reason.message : typeof reason === 'object' && reason && 'message' in reason && typeof reason.message === 'string' ? reason.message : fallback;
 
 async function photoBytes(photo: NewItemPhoto) {
   if (photo.base64) {
@@ -442,15 +443,22 @@ export function AppProvider({ children }: React.PropsWithChildren) {
       const allActions = await loadOfflineActions();
       const mine = allActions.filter((action) => action.userId === userId);
       const completed = new Set<string>();
+      const rejected = new Set<string>();
+      let rejectionMessage = '';
       for (const action of mine) {
         try { await cloud.setItemStatus(action.itemId, 'purchased'); completed.add(action.id); }
-        catch (reason) { if (isNetworkFailure(reason)) break; }
+        catch (reason) {
+          if (isNetworkFailure(reason)) break;
+          rejected.add(action.id);
+          rejectionMessage ||= reasonMessage(reason, 'Ootel olnud ostu ei saanud sünkroonida.');
+        }
       }
-      if (completed.size) {
-        const remaining = allActions.filter((action) => !completed.has(action.id));
+      if (completed.size || rejected.size) {
+        const remaining = allActions.filter((action) => !completed.has(action.id) && !rejected.has(action.id));
         await saveOfflineActions(remaining);
         offlineActionsRef.current = remaining.filter((action) => action.userId === userId);
         setPendingOfflineActions(offlineActionsRef.current.length);
+        if (rejected.size) show(`${rejected.size === 1 ? 'Ootel olnud ost' : `${rejected.size} ootel olnud ostu`} jäi salvestamata: ${rejectionMessage}`);
         await refreshCloud(userId, cloudGroupId.current);
       }
     })().catch(() => undefined).finally(() => { flushingOffline.current = false; });
@@ -518,7 +526,18 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     if (hasSupabaseConfig) { await cloud.updateList(id, cleanName, cleanDescription); await refreshCloud(); return; }
     update((current) => updateShoppingList(current, id, cleanName, cleanDescription));
   };
-  const archiveList = (id: string) => { if (hasSupabaseConfig) void cloud.archiveList(id).then(async () => { await refreshCloud(); scheduleUndo('Nimekiri arhiveeriti.', async () => { await cloud.unarchiveList(id); await refreshCloud(); }); }).catch((error) => show(error.message)); else updateWithUndo('Nimekiri arhiveeriti.', (current) => ({ ...current, lists: current.lists.map((list) => list.id === id ? { ...list, archived_at: now(), updated_at: now() } : list) })); };
+  const archiveList = async (id: string) => {
+    if (hasSupabaseConfig) {
+      try {
+        await cloud.archiveList(id);
+        await refreshCloud();
+        scheduleUndo('Nimekiri arhiveeriti.', async () => { await cloud.unarchiveList(id); await refreshCloud(); });
+        return true;
+      } catch (error) { show(reasonMessage(error, 'Nimekirja arhiveerimine ebaõnnestus.')); return false; }
+    }
+    updateWithUndo('Nimekiri arhiveeriti.', (current) => ({ ...current, lists: current.lists.map((list) => list.id === id ? { ...list, archived_at: now(), updated_at: now() } : list) }));
+    return true;
+  };
   const deleteList = (id: string) => { if (hasSupabaseConfig) void cloud.deleteList(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => moveListToTrash(current, id)); };
   const restoreList = (id: string) => { if (hasSupabaseConfig) void cloud.restoreList(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => restoreListFromTrash(current, id)); };
   const addCategory = (listId: string, name: string) => { if (hasSupabaseConfig) { const order = state.categories.filter((value) => value.list_id === listId).length; void cloud.createCategory(listId, cloudGroupId.current!, state.currentUserId!, name, order).then(() => refreshCloud()).catch((error) => show(error.message)); return; } update((current) => {
@@ -640,16 +659,29 @@ export function AppProvider({ children }: React.PropsWithChildren) {
     return { ...current, items, assignments: assignment ? [...releasedAssignments, assignment] : releasedAssignments, notifications: notification ? [notification, ...current.notifications] : current.notifications, activity: [...current.activity, activity] };
   }); };
   const markAllRead = () => { if (hasSupabaseConfig) void cloud.markNotificationsRead(state.currentUserId!).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => ({ ...current, notifications: current.notifications.map((value) => value.user_id === current.currentUserId ? { ...value, read_at: value.read_at ?? now() } : value) })); };
-  const addNote = (input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url' | 'pinned'>>) => { if (hasSupabaseConfig) { void cloud.createNote({ ...input, group_id: cloudGroupId.current, created_by: state.currentUserId, pinned: input.pinned ?? false }).then(() => refreshCloud()).catch((error) => show(error.message)); return; } update((current) => {
-    const at = now(); return { ...current, notes: [{ ...input, pinned: input.pinned ?? false, id: uid('note'), group_id: 'family', created_by: current.currentUserId!, created_at: at, updated_at: at }, ...current.notes] };
-  }); };
-  const updateNote = (id: string, input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url'>>) => {
-    if (hasSupabaseConfig) { void cloud.updateNote(id, { ...input, phone: input.phone ?? null, url: input.url ?? null }).then(() => refreshCloud()).catch((error) => show(error.message)); return; }
-    update((current) => ({ ...current, notes: current.notes.map((value) => value.id === id ? { ...value, ...input, updated_at: now() } : value) }));
+  const addNote = async (input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url' | 'pinned'>>) => {
+    if (hasSupabaseConfig) {
+      try { await cloud.createNote({ ...input, group_id: cloudGroupId.current, created_by: state.currentUserId, pinned: input.pinned ?? false }); await refreshCloud(); return true; }
+      catch (error) { show(reasonMessage(error, 'Märkme salvestamine ebaõnnestus.')); return false; }
+    }
+    update((current) => { const at = now(); return { ...current, notes: [{ ...input, pinned: input.pinned ?? false, id: uid('note'), group_id: 'family', created_by: current.currentUserId!, created_at: at, updated_at: at }, ...current.notes] }; });
+    return true;
   };
-  const deleteNote = (id: string) => {
-    if (hasSupabaseConfig) { void cloud.deleteNote(id).then(() => refreshCloud()).catch((error) => show(error.message)); return; }
+  const updateNote = async (id: string, input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url'>>) => {
+    if (hasSupabaseConfig) {
+      try { await cloud.updateNote(id, { ...input, phone: input.phone ?? null, url: input.url ?? null }); await refreshCloud(); return true; }
+      catch (error) { show(reasonMessage(error, 'Märkme salvestamine ebaõnnestus.')); return false; }
+    }
+    update((current) => ({ ...current, notes: current.notes.map((value) => value.id === id ? { ...value, ...input, updated_at: now() } : value) }));
+    return true;
+  };
+  const deleteNote = async (id: string) => {
+    if (hasSupabaseConfig) {
+      try { await cloud.deleteNote(id); await refreshCloud(); return true; }
+      catch (error) { show(reasonMessage(error, 'Märkme kustutamine ebaõnnestus.')); return false; }
+    }
     update((current) => ({ ...current, notes: current.notes.filter((value) => value.id !== id) }));
+    return true;
   };
   const setItemImage = async (itemId: string, uri: string, mimeType?: string | null, base64?: string | null) => { if (hasSupabaseConfig) {
     try { await cloud.saveItemImage(cloudGroupId.current!, itemId, state.currentUserId!, await photoBytes({ uri, mimeType, base64 }), mimeType ?? 'image/jpeg'); await refreshCloud(); }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useIsFocused } from 'expo-router';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, TextInputProps, useWindowDimensions, View, ViewStyle } from 'react-native';
 import { useApp } from '@/context/AppContext';
 import { shadowFor, ThemeColors, ThemeMode } from '@/theme';
@@ -14,8 +15,8 @@ const symbolIcons: Record<string, AppIconName> = {
 };
 
 export function Page({ children, title, subtitle, action }: React.PropsWithChildren<{ title: string; subtitle?: string; action?: React.ReactNode }>) {
-  const { width } = useWindowDimensions(); const narrow = width < 480; const styles = useUIStyles();
-  return <ScrollView style={styles.page} contentContainerStyle={[styles.pageContent, narrow && styles.pageContentNarrow]}><View style={[styles.titleRow, narrow && styles.titleRowNarrow]}><View style={{ flex: narrow ? undefined : 1 }}><Text accessibilityRole="header" style={[styles.h1, narrow && styles.h1Narrow]}>{title}</Text>{subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}</View>{action ? <View style={narrow && styles.actionNarrow}>{action}</View> : null}</View>{children}</ScrollView>;
+  const { width } = useWindowDimensions(); const narrow = width < 480; const styles = useUIStyles(); const isFocused = useIsFocused();
+  return <ScrollView aria-hidden={!isFocused} accessibilityElementsHidden={!isFocused} importantForAccessibility={isFocused ? 'auto' : 'no-hide-descendants'} style={styles.page} contentContainerStyle={[styles.pageContent, narrow && styles.pageContentNarrow]}><View style={[styles.titleRow, narrow && styles.titleRowNarrow]}><View style={{ flex: narrow ? undefined : 1 }}><Text accessibilityRole="header" style={[styles.h1, narrow && styles.h1Narrow]}>{title}</Text>{subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}</View>{action ? <View style={narrow && styles.actionNarrow}>{action}</View> : null}</View>{children}</ScrollView>;
 }
 export function Card({ children, style }: React.PropsWithChildren<{ style?: StyleProp<ViewStyle> }>) { const styles = useUIStyles(); return <View style={[styles.card, style]}>{children}</View>; }
 export function Button({ label, onPress, variant = 'primary', icon, disabled, testID }: { label: string; onPress: () => void; variant?: 'primary' | 'secondary' | 'danger' | 'ghost'; icon?: string; disabled?: boolean; testID?: string }) {

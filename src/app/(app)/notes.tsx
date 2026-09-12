@@ -4,6 +4,7 @@ import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '@/context/AppContext';
 import { ThemeColors } from '@/theme';
 import { Button, Card, Field, Page, Sheet } from '@/components/ui';
+import { normalizeNoteUrl } from '@/data/noteLinks';
 
 export default function NotesScreen() {
   const app = useApp();
@@ -14,6 +15,8 @@ export default function NotesScreen() {
   const [content, setContent] = useState('');
   const [phone, setPhone] = useState('');
   const [url, setUrl] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
   const notes = [...app.state.notes].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
   const resetForm = () => {
@@ -26,15 +29,19 @@ export default function NotesScreen() {
     setEditingId(note.id); setTitle(note.title); setContent(note.content);
     setPhone(note.phone ?? ''); setUrl(note.url ?? ''); setOpen(true);
   };
-  const close = () => { setOpen(false); resetForm(); };
-  const submit = () => {
-    if (!title.trim() || !content.trim()) return;
-    const input = { title: title.trim(), content: content.trim(), phone: phone.trim() || undefined, url: url.trim() || undefined };
-    if (editingId) app.updateNote(editingId, input); else app.addNote(input);
-    close();
+  const close = () => { if (!saving) { setOpen(false); setFormError(''); resetForm(); } };
+  const submit = async () => {
+    if (!title.trim() || !content.trim() || saving) return;
+    const normalizedUrl = normalizeNoteUrl(url);
+    if (url.trim() && !normalizedUrl) { setFormError('Sisesta korrektne veebiaadress.'); return; }
+    setSaving(true); setFormError('');
+    const input = { title: title.trim(), content: content.trim(), phone: phone.trim() || undefined, url: normalizedUrl };
+    const saved = editingId ? await app.updateNote(editingId, input) : await app.addNote(input);
+    setSaving(false);
+    if (saved) close();
   };
   const remove = (noteId: string, noteTitle: string) => {
-    const run = () => app.deleteNote(noteId);
+    const run = () => { void app.deleteNote(noteId); };
     const message = `Märge „${noteTitle}“ kustutatakse jäädavalt.`;
     if (Platform.OS === 'web') { if (window.confirm(message)) run(); }
     else Alert.alert('Kustuta märge?', message, [{ text: 'Katkesta', style: 'cancel' }, { text: 'Kustuta', style: 'destructive', onPress: run }]);
@@ -57,7 +64,8 @@ export default function NotesScreen() {
       <Field label="Sisu" value={content} onChangeText={setContent} placeholder="Kirjuta oluline info" multiline />
       <Field label="Telefoninumber (valikuline)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+372 ..." />
       <Field label="Veebiaadress (valikuline)" value={url} onChangeText={setUrl} keyboardType="url" autoCapitalize="none" placeholder="https://..." />
-      <Button label={editingId ? 'Salvesta muudatused' : 'Salvesta märge'} onPress={submit} disabled={!title.trim() || !content.trim()} />
+      {formError ? <Text accessibilityRole="alert" style={styles.error}>{formError}</Text> : null}
+      <Button label={saving ? 'Salvestan…' : editingId ? 'Salvesta muudatused' : 'Salvesta märge'} onPress={() => { void submit(); }} disabled={saving || !title.trim() || !content.trim()} />
     </Sheet>
   </Page>;
 }
@@ -68,4 +76,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   empty: { color: colors.muted, fontSize: 16, lineHeight: 24, textAlign: 'center' },
   actions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 4, paddingTop: 3 },
   action: { flexGrow: 1, minWidth: 140 },
+  error: { color: colors.danger, fontSize: 15, lineHeight: 21 },
 });

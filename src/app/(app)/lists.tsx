@@ -7,32 +7,19 @@ import { AppIcon } from '@/components/AppIcon';
 import { Button, Card, Empty, Page } from '@/components/ui';
 import { formatEuros, settlementVisibleTo } from '@/data/settlements';
 import { barEntryRemaining, barEntryVisibleTo, formatBarEuros } from '@/data/barLedger';
-import { departureAt, departureTime, isDeliveredShipmentVisible } from '@/data/departures';
-import { Delivery, Item } from '@/types/domain';
-
-type ShipLoad = { ship: string; departureAt: number; departure: string; items: Item[]; deliveries: Delivery[] };
+import { Item } from '@/types/domain';
+import { visibleShipLoads } from '@/data/shipLoads';
 
 export default function ListsScreen() {
   const app = useApp(); const styles = makeStyles(app.themeColors);
-  const [openedShip, setOpenedShip] = useState<string | null>(null);
+  const [openedLoad, setOpenedLoad] = useState<string | null>(null);
   const settlements = app.state.settlements.filter((value) => app.currentUser && settlementVisibleTo(value, app.currentUser.id) && ['open', 'marked_paid'].includes(value.status));
   const iOwe = settlements.filter((value) => value.debtor_id === app.currentUser?.id).reduce((sum, value) => sum + Number(value.amount), 0);
   const owedToMe = settlements.filter((value) => value.creditor_id === app.currentUser?.id).reduce((sum, value) => sum + Number(value.amount), 0);
   const barEntries = app.state.barLedgerEntries.filter((entry) => app.currentUser && entry.status === 'open' && barEntryVisibleTo(app.state, entry, app.currentUser.id));
   const barTotal = barEntries.reduce((sum, entry) => sum + barEntryRemaining(app.state, entry), 0);
-  const shipLoads = useMemo(() => {
-    const linksByDelivery = new Map<string, string[]>(); app.state.deliveryItems.forEach((link) => linksByDelivery.set(link.delivery_id, [...(linksByDelivery.get(link.delivery_id) ?? []), link.item_id]));
-    const itemsById = new Map(app.state.items.map((item) => [item.id, item]));
-    const loads = app.state.deliveries.filter((delivery) => isDeliveredShipmentVisible(delivery)).map((delivery) => {
-      const linked = (linksByDelivery.get(delivery.id) ?? []).map((id) => itemsById.get(id)).filter((item): item is Item => Boolean(item && !item.deleted_at && item.status === 'delivered'));
-      const items = linked.length ? linked : app.state.items.filter((item) => !item.deleted_at && item.list_id === delivery.list_id && item.assigned_to === delivery.courier_id && item.status === 'delivered');
-      return { ship: delivery.ship_name, departureAt: departureAt(delivery), departure: `${delivery.departure_date.split('-').reverse().join('.')} kell ${departureTime(delivery.departure_time)}`, items, deliveries: [delivery] };
-    }).filter((load) => load.items.length);
-    const grouped = new Map<string, ShipLoad>();
-    loads.forEach((load) => { const previous = grouped.get(load.ship); grouped.set(load.ship, previous ? { ...previous, departureAt: Math.min(previous.departureAt, load.departureAt), departure: previous.departureAt <= load.departureAt ? previous.departure : load.departure, items: [...previous.items, ...load.items], deliveries: [...previous.deliveries, ...load.deliveries] } : load); });
-    return [...grouped.values()].sort((a, b) => a.departureAt - b.departureAt);
-  }, [app.state.deliveries, app.state.deliveryItems, app.state.items]);
-  const selected = shipLoads.find((load) => load.ship === openedShip);
+  const shipLoads = useMemo(() => visibleShipLoads(app.state.deliveries, app.state.deliveryItems, app.state.items), [app.state.deliveries, app.state.deliveryItems, app.state.items]);
+  const selected = shipLoads.find((load) => load.key === openedLoad);
   const removeFromShip = (item: Item) => {
     const execute = () => { void app.removeFromDelivery(item.id); };
     if (Platform.OS === 'web') { if (window.confirm(`Kas eemaldada „${item.name}“ laevalt? Toode liigub tagasi ostetud asjade hulka.`)) execute(); }
@@ -43,8 +30,8 @@ export default function ListsScreen() {
     <Pressable accessibilityRole="link" accessibilityLabel="Ava Baarivihik" onPress={() => router.push('/(app)/bar-ledger' as never)}><Card style={styles.settlementCard}><View style={styles.settlementIcon}><AppIcon name="notes" color={app.themeColors.primaryDark} size={23} strokeWidth={1.8} /></View><View style={{ flex: 1 }}><Text style={styles.name}>Baarivihik</Text><Text style={styles.desc}>{barEntries.length ? `${barEntries.length} aktiivset kirjet · jääk ${formatBarEuros(barTotal)}` : 'Lisa ja halda baarist kriipsu peale võetud kaupu.'}</Text></View><AppIcon name="chevron-right" color={app.themeColors.primary} size={21} strokeWidth={2.5} /></Card></Pressable>
     <View style={styles.sectionHead}><Text style={styles.sectionTitle}>Laeval olevad asjad</Text><Text style={styles.sectionHint}>Saadetis liigub arhiivi 1 tund pärast väljumist.</Text></View>
     {shipLoads.length ? <View style={styles.grid}>{shipLoads.map((load) => {
-      const opened = openedShip === load.ship;
-      return <Card key={load.ship} style={opened ? styles.shipCardOpen : undefined}><Pressable accessibilityRole="button" accessibilityState={{ expanded: opened }} onPress={() => setOpenedShip((current) => current === load.ship ? null : load.ship)} style={styles.shipCard}><View style={styles.shipIcon}><AppIcon name="ship" color={app.themeColors.accentText} size={25} /></View><View style={{ flex: 1 }}><Text style={styles.name}>{load.ship}</Text><Text style={styles.desc}>{load.items.length} {load.items.length === 1 ? 'asi' : 'asja'} · väljub {load.departure}</Text></View><AppIcon name={opened ? 'chevron-down' : 'chevron-right'} color={app.themeColors.primary} size={21} strokeWidth={2.5} /></Pressable></Card>;
+      const opened = openedLoad === load.key;
+      return <Card key={load.key} style={opened ? styles.shipCardOpen : undefined}><Pressable accessibilityRole="button" accessibilityState={{ expanded: opened }} onPress={() => setOpenedLoad((current) => current === load.key ? null : load.key)} style={styles.shipCard}><View style={styles.shipIcon}><AppIcon name="ship" color={app.themeColors.accentText} size={25} /></View><View style={{ flex: 1 }}><Text style={styles.name}>{load.ship}</Text><Text style={styles.desc}>{load.items.length} {load.items.length === 1 ? 'asi' : 'asja'} · väljub {load.departure}</Text></View><AppIcon name={opened ? 'chevron-down' : 'chevron-right'} color={app.themeColors.primary} size={21} strokeWidth={2.5} /></Pressable></Card>;
     })}</View> : <Empty icon="⚓" title="Laeval kaupu ei ole" body="Ostetud kaup ilmub siia pärast laeva ja väljumisaja määramist." />}
     {selected ? <Card style={styles.itemCard}><Text style={styles.name}>{selected.ship}</Text><Text style={styles.desc}>Väljub {selected.departure}</Text>{selected.items.map((item) => <View key={item.id} style={styles.itemRow}><View style={styles.itemCopy}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.itemMeta}>{item.quantity} {item.unit ?? 'tk'}</Text></View>{item.assigned_to === app.currentUser?.id ? <Button label="Eemalda laevalt" variant="danger" onPress={() => removeFromShip(item)} /> : null}</View>)}</Card> : null}
   </Page>;
