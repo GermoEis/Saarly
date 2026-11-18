@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { Alert, AppState, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '@/context/AppContext';
 import { ItemCard } from '@/components/ItemCard';
 import { ItemCategoryControls } from '@/components/ItemCategoryControls';
@@ -11,6 +12,7 @@ import { assignedItemsForUser } from '@/data/business';
 import { AppIcon } from '@/components/AppIcon';
 import { departureTime, isActiveShipment } from '@/data/departures';
 import { availableCategoryNames, CategoryItemSortOrder, filterItemsByCategory, sortCategoryItems } from '@/data/itemCategories';
+import { recentDeliveriesForUser } from '@/data/recentDeliveries';
 
 export default function AssignedScreen() {
   const app = useApp(); const userId = app.currentUser?.id; const styles = makeStyles(app.themeColors);
@@ -22,12 +24,27 @@ export default function AssignedScreen() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [currentTime, setCurrentTime] = useState(Date.now);
   const allItems = assignedItemsForUser(app.state, userId);
   const items = sortCategoryItems(app.state, filterItemsByCategory(app.state, allItems, categoryFilter), sortOrder);
   const toBuy = items.filter((item) => item.status === 'assigned' || item.status === 'accepted');
   const purchased = items.filter((item) => item.status === 'purchased');
   const allPurchased = allItems.filter((item) => item.status === 'purchased');
-  const recentlyDelivered = app.state.items.filter((item) => !item.deleted_at && item.assigned_to === userId && item.status === 'delivered' && !app.state.lists.find((list) => list.id === item.list_id)?.deleted_at).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const recentDeliveries = recentDeliveriesForUser(app.state, userId, currentTime);
+  const recentlyDelivered = recentDeliveries.map(({ item }) => item);
+  const nextExpiry = recentDeliveries.length
+    ? Math.min(...recentDeliveries.map(({ expiresAt }) => expiresAt))
+    : undefined;
+  useEffect(() => {
+    if (nextExpiry === undefined) return;
+    const timer = setTimeout(() => setCurrentTime(Date.now()), Math.max(0, nextExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [nextExpiry, currentTime]);
+  useFocusEffect(useCallback(() => {
+    setCurrentTime(Date.now());
+    const subscription = AppState.addEventListener('change', (status) => { if (status === 'active') setCurrentTime(Date.now()); });
+    return () => subscription.remove();
+  }, []));
   const readyLists = [...new Set(allPurchased.map((item) => item.list_id))];
   const categoryNames = availableCategoryNames(app.state);
   const otherMembers = app.state.profiles.filter((profile) => profile.id !== userId && app.state.groupMembers.some((member) => member.profile_id === profile.id));
@@ -50,7 +67,7 @@ export default function AssignedScreen() {
     {!allItems.length && !recentlyDelivered.length ? <Empty icon="✓" title="Kõik on korras" body="Sul pole praegu ühtegi enda võetud toodet." /> : !items.length && allItems.length ? <Empty icon="○" title="Selles kategoorias pole asju" body="Vali teine kategooria või kuva kõik asjad." /> : <>
       {toBuy.length ? <Section title="Ostmist ootavad" count={toBuy.length}>{toBuy.map((item) => <AssignedRow key={item.id} item={item} selection={selectionFor(item)} />)}</Section> : null}
       {purchased.length ? <Section title="Ostetud" count={purchased.length}>{purchased.map((item) => <ItemCard key={item.id} item={item} compact showCategory selection={selectionFor(item)} />)}</Section> : null}
-      {recentlyDelivered.length ? <View style={{ gap: 11 }}><Pressable accessibilityRole="button" accessibilityState={{ expanded: recentlyDeliveredOpen }} onPress={() => setRecentlyDeliveredOpen((open) => !open)} style={styles.historyHead}><View style={styles.head}><Text style={styles.title}>Hiljuti laevale viidud</Text><Text style={styles.count}>{recentlyDelivered.length}</Text></View><Text style={styles.historyToggle}>{recentlyDeliveredOpen ? 'Peida' : 'Näita'}</Text></Pressable>{recentlyDeliveredOpen ? recentlyDelivered.map((item) => <ItemCard key={item.id} item={item} compact showCategory />) : null}</View> : null}
+      {recentlyDelivered.length ? <View style={{ gap: 11 }}><Pressable accessibilityRole="button" accessibilityState={{ expanded: recentlyDeliveredOpen }} onPress={() => setRecentlyDeliveredOpen((open) => !open)} style={styles.historyHead}><View style={styles.head}><Text style={styles.title}>Hiljuti laevale viidud</Text><Text style={styles.count}>{recentlyDelivered.length}</Text></View><Text style={styles.historyToggle}>{recentlyDeliveredOpen ? 'Peida' : 'Näita'}</Text></Pressable>{recentlyDeliveredOpen ? <><Text style={styles.deliveryText}>Siin kuvatakse viimase 24 tunni jooksul laevale viidud asjad. Ajalugu säilib.</Text>{recentlyDelivered.map((item) => <ItemCard key={item.id} item={item} compact showCategory />)}</> : null}</View> : null}
     </>}
     {otherMembers.length ? <View style={styles.otherAssignments}><Text style={styles.otherAssignmentsTitle}>Teistele määratud</Text>{otherMembers.map((member) => <MemberAssignments key={member.id} member={member} items={itemsForMember(member.id)} open={openMemberIds.includes(member.id)} onToggle={() => toggleMember(member.id)} />)}</View> : null}
     <DeliveryFormSheet listId={deliveryListId} onClose={() => setDeliveryListId(null)} />
