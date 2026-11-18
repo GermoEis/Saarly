@@ -10,12 +10,13 @@ import { AppIcon } from './AppIcon';
 import { ImageViewer } from './ImageViewer';
 import { Button, Card, Field, Sheet, StatusBadge } from './ui';
 
-export function ItemCard({ item, compact = false, showCategory = false, selection }: { item: Item; compact?: boolean; showCategory?: boolean; selection?: { selected: boolean; onToggle: () => void } }) {
+export function ItemCard({ item, compact = false, showCategory = false, showAssignmentAction = false, selection }: { item: Item; compact?: boolean; showCategory?: boolean; showAssignmentAction?: boolean; selection?: { selected: boolean; onToggle: () => void } }) {
   const app = useApp();
   const styles = makeStyles(app.themeColors);
   const [open, setOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editName, setEditName] = useState(item.name);
   const [editQuantity, setEditQuantity] = useState(String(item.quantity));
   const [editUnit, setEditUnit] = useState(item.unit ?? '');
@@ -30,6 +31,22 @@ export function ItemCard({ item, compact = false, showCategory = false, selectio
   const attempts = app.state.attempts.filter((entry) => entry.item_id === item.id);
   const categoryName = categoryNameForItem(app.state, item);
   const categoryNames = availableCategoryNames(app.state);
+  const groupId = app.state.lists.find((list) => list.id === item.list_id)?.group_id;
+  const assignees = app.state.profiles.filter((profile) => app.state.groupMembers.some((member) => member.group_id === groupId && member.profile_id === profile.id));
+  const assignTo = async (userId?: string) => {
+    if (saving) return;
+    setSaving(true);
+    const saved = await app.updateItem(item.id, { assigned_to: userId });
+    setSaving(false);
+    if (saved) setOpen(false);
+  };
+  const saveEdits = async () => {
+    if (saving) return;
+    setSaving(true);
+    const saved = await app.updateItem(item.id, { name: editName.trim() || item.name, quantity: Number(editQuantity) || 1, unit: editUnit.trim() || undefined, note: editNote.trim() || undefined });
+    setSaving(false);
+    if (saved) setEditing(false);
+  };
   const markPurchased = async () => {
     await app.outcome(item.id, 'purchased');
   };
@@ -44,7 +61,7 @@ export function ItemCard({ item, compact = false, showCategory = false, selectio
     if (!result.canceled) void app.setItemImage(item.id, result.assets[0].uri, result.assets[0].mimeType, result.assets[0].base64);
   };
 
-  return <>
+  return <View style={{ gap: 8 }}>
     <Pressable accessibilityRole={selection ? 'checkbox' : 'button'} accessibilityState={selection ? { checked: selection.selected } : undefined} accessibilityLabel={selection ? `Vali toode ${item.name}` : `Ava toode ${item.name}`} onPress={() => selection ? selection.onToggle() : setOpen(true)}>
       <Card style={[compact ? styles.compact : undefined, selection?.selected ? styles.selected : undefined]}>
         <View style={styles.topRow}>
@@ -57,20 +74,28 @@ export function ItemCard({ item, compact = false, showCategory = false, selectio
         {item.note && !compact ? <Text style={styles.note}>{item.note}</Text> : null}
       </Card>
     </Pressable>
+    {showAssignmentAction && app.isCreator && !selection ? <Button label="Määra kasutajale" variant="secondary" onPress={() => setOpen(true)} /> : null}
     <Sheet visible={open} title={item.name} onClose={() => setOpen(false)}>
       <View style={styles.detailLead}><Text style={styles.bigQuantity}>{item.quantity} {item.unit ?? 'tk'}</Text><StatusBadge status={item.status} /></View>
+      {app.isCreator ? <View style={styles.infoBox}>
+        <Text style={styles.infoTitle}>{saving ? 'Salvestan…' : 'Määratud kasutaja'}</Text>
+        <View style={styles.chips}>
+          <Pressable accessibilityRole="radio" accessibilityState={{ checked: !item.assigned_to, disabled: saving || !item.assigned_to }} disabled={saving || !item.assigned_to} onPress={() => { void assignTo(); }} style={[styles.chip, !item.assigned_to && styles.chipActive]}><Text style={[styles.chipText, !item.assigned_to && styles.chipTextActive]}>Jooksev list</Text></Pressable>
+          {assignees.map((profile) => <Pressable key={profile.id} accessibilityRole="radio" accessibilityLabel={`Määra kasutajale ${profile.display_name}`} accessibilityState={{ checked: item.assigned_to === profile.id, disabled: saving || item.assigned_to === profile.id }} disabled={saving || item.assigned_to === profile.id} onPress={() => { void assignTo(profile.id); }} style={[styles.chip, item.assigned_to === profile.id && styles.chipActive]}><Text style={[styles.chipText, item.assigned_to === profile.id && styles.chipTextActive]}>{profile.display_name}</Text></Pressable>)}
+        </View>
+      </View> : null}
       {item.note ? <View style={styles.infoBox}><Text style={styles.infoTitle}>Märkus</Text><Text style={styles.note}>{item.note}</Text></View> : null}
       {imageSource ? <><Pressable accessibilityRole="button" accessibilityLabel={`Ava ${item.name} foto täisekraanil`} onPress={() => setImageOpen(true)} style={styles.imageWrap}><Image source={imageSource} resizeMode="contain" style={styles.image} /><View pointerEvents="none" style={styles.openHint}><AppIcon name="image" color="#FFFFFF" size={16} /><Text style={styles.openHintText}>Ava pilt</Text></View></Pressable><Button label="Ava pilt täisekraanil" icon="▣" variant="secondary" onPress={() => setImageOpen(true)} /></> : <View style={styles.photoEmpty}><Text style={styles.photoEmptyIcon}>▧</Text><Text style={styles.note}>Fotot pole lisatud</Text></View>}
       {app.isCreator ? <View style={styles.actions}><Button label={image ? 'Asenda foto' : 'Vali foto'} icon="▣" variant="secondary" onPress={() => pickImage(false)} /><Button label="Tee foto" icon="◉" variant="secondary" onPress={() => pickImage(true)} />{image ? <Button label="Eemalda foto" variant="ghost" onPress={() => void app.removeItemImage(item.id)} /> : null}</View> : null}
-      {app.isCreator ? <View style={styles.infoBox}><Text style={styles.infoTitle}>Kategooria</Text><View style={styles.chips}>{categoryNames.map((name) => { const active = normalizeCategoryName(name) === normalizeCategoryName(categoryName); return <Pressable key={normalizeCategoryName(name)} onPress={() => { void app.assignItemsCategory([item.id], name); }} style={[styles.chip, active && styles.chipActive]}><Text style={[styles.chipText, active && styles.chipTextActive]}>{name}</Text></Pressable>; })}</View><Text style={styles.infoTitle}>Määratud kasutaja</Text><View style={styles.chips}><Pressable onPress={() => app.updateItem(item.id, { assigned_to: undefined })} style={[styles.chip, !item.assigned_to && styles.chipActive]}><Text style={[styles.chipText, !item.assigned_to && styles.chipTextActive]}>Jooksev list</Text></Pressable>{app.state.profiles.filter((profile) => app.state.groupMembers.some((member) => member.profile_id === profile.id)).map((profile) => <Pressable key={profile.id} onPress={() => app.updateItem(item.id, { assigned_to: profile.id })} style={[styles.chip, item.assigned_to === profile.id && styles.chipActive]}><Text style={[styles.chipText, item.assigned_to === profile.id && styles.chipTextActive]}>{profile.display_name}</Text></Pressable>)}</View></View> : null}
-      {app.isCreator && editing ? <View style={styles.actions}><Field label="Nimetus" value={editName} onChangeText={setEditName} /><Field label="Kogus" value={editQuantity} onChangeText={setEditQuantity} keyboardType="numeric" /><Field label="Ühik / pakend" value={editUnit} onChangeText={setEditUnit} /><Field label="Märkus" value={editNote} onChangeText={setEditNote} multiline /><Button label="Salvesta muudatused" onPress={() => { app.updateItem(item.id, { name: editName.trim() || item.name, quantity: Number(editQuantity) || 1, unit: editUnit.trim() || undefined, note: editNote.trim() || undefined }); setEditing(false); }} /><Button label="Loobu" variant="ghost" onPress={() => setEditing(false)} /></View> : app.isCreator ? <Button label="Muuda toote andmeid" variant="ghost" onPress={() => setEditing(true)} /> : null}
+      {app.isCreator ? <View style={styles.infoBox}><Text style={styles.infoTitle}>Kategooria</Text><View style={styles.chips}>{categoryNames.map((name) => { const active = normalizeCategoryName(name) === normalizeCategoryName(categoryName); return <Pressable key={normalizeCategoryName(name)} onPress={() => { void app.assignItemsCategory([item.id], name); }} style={[styles.chip, active && styles.chipActive]}><Text style={[styles.chipText, active && styles.chipTextActive]}>{name}</Text></Pressable>; })}</View></View> : null}
+      {app.isCreator && editing ? <View style={styles.actions}><Field label="Nimetus" value={editName} onChangeText={setEditName} /><Field label="Kogus" value={editQuantity} onChangeText={setEditQuantity} keyboardType="numeric" /><Field label="Ühik / pakend" value={editUnit} onChangeText={setEditUnit} /><Field label="Märkus" value={editNote} onChangeText={setEditNote} multiline /><Button label={saving ? 'Salvestan…' : 'Salvesta muudatused'} disabled={saving} onPress={() => { void saveEdits(); }} /><Button label="Loobu" variant="ghost" disabled={saving} onPress={() => setEditing(false)} /></View> : app.isCreator ? <Button label="Muuda toote andmeid" variant="ghost" onPress={() => setEditing(true)} /> : null}
       {!item.assigned_to && (item.status === 'unassigned' || item.status === 'unavailable') ? <Button label="Võtan endale" icon="+" onPress={() => app.claim(item.id)} /> : null}
       {mine && (item.status === 'assigned' || item.status === 'accepted') ? <View style={styles.actions}><Button label="Ostetud" icon="✓" onPress={() => { void markPurchased(); }} /><Button label="Ei leidnud / ei ole" icon="!" variant="danger" onPress={() => { void app.outcome(item.id, 'unavailable', 'Märgitud Saarly rakenduses'); }} /></View> : null}
       <View style={{ gap: 10 }}><Text style={styles.sectionTitle}>Tegevusajalugu</Text>{history.length ? history.map((entry) => <View key={entry.id} style={styles.timeline}><View style={styles.dot} /><View style={{ flex: 1 }}><Text style={styles.timelineText}><Text style={{ fontWeight: '800' }}>{new Date(entry.created_at).toLocaleTimeString('et-EE', { hour: '2-digit', minute: '2-digit' })}</Text> – {profileName(app.state, entry.actor_id)} {entry.action.toLocaleLowerCase('et-EE')}</Text>{entry.explanation ? <Text style={styles.timelineNote}>{entry.explanation}</Text> : null}</View></View>) : <Text style={styles.note}>Tegevusi veel pole.</Text>}</View>
       {app.isCreator ? <Button label={app.mode === 'demo' ? 'Liiguta prügikasti' : 'Kustuta toode'} variant="danger" onPress={confirmDelete} /> : null}
     </Sheet>
     <ImageViewer visible={imageOpen && Boolean(imageSource)} source={imageSource} title={`${item.name} foto`} onClose={() => setImageOpen(false)} />
-  </>;
+  </View>;
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({

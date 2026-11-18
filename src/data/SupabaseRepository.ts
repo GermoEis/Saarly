@@ -240,7 +240,13 @@ export class SupabaseRepository {
     const { data, error } = await this.client().rpc('create_quick_item', { target_group: groupId, item_name: values.name, item_quantity: values.quantity, item_unit: values.unit ?? null, item_note: values.note ?? null, item_category_name: values.category_name ?? null });
     if (error) throw error; return data as string;
   }
-  async updateItem(id: string, values: Record<string, unknown>) { const { error } = await this.client().from('items').update(values).eq('id', id); if (error) throw error; }
+  async updateItem(id: string, values: Record<string, unknown>) {
+    // JSON omits undefined, so clearing an assignee must explicitly send null.
+    const patch = Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value === undefined ? null : value]));
+    const { data, error } = await this.client().from('items').update(patch).eq('id', id).select('id').maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Toodet ei saanud muuta. See võib olla kustutatud või sul puudub muutmisõigus.');
+  }
   async deleteItem(id: string) { const { error } = await this.client().rpc('trash_item', { target_item: id }); if (error) throw error; }
   async restoreItem(id: string) { const { error } = await this.client().rpc('restore_trashed_item', { target_item: id }); if (error) throw error; }
   async undoItemStatus(id: string, previousStatus: 'assigned' | 'accepted' | 'purchased') { const { error } = await this.client().rpc('undo_item_status', { target_item: id, previous_status: previousStatus }); if (error) throw error; }

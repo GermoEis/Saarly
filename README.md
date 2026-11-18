@@ -59,6 +59,8 @@ Pärisrežiimis saab juba laaditud nimekirju vaadata ka kehva ühendusega ning v
 
 Toote kaardile vajutamine avab detaili koos foto, muutmise, määramise, kategooriasse liigutamise ja tegevusajalooga. Foto saab valida või teha juba uue toote vormis ning iga foto salvestatakse püsivalt oma toote külge. Kõik grupiliikmed saavad kategooriaid ümber nimetada ning üles/alla liigutada. Kustutamine ja arhiveerimine küsivad kinnitust. Administraatori eriõigus on piiratud grupi nime, kutsete ja liikmete haldamisega.
 
+Jooksvas listis saab iga grupiliige vajutada toote juures **Määra kasutajale** ja valida sama grupi liikme. Määrangu eemaldamiseks vali toote detailis **Jooksev list**. Vaate **Minu asjad → Hiljuti laevale viidud** kirjed kaovad automaatselt 24 tundi pärast laevale viiduks märkimist; tooteid, saadetisi ja nende ajalugu ei kustutata.
+
 ## Telefonis katsetamine
 
 ```bash
@@ -113,6 +115,20 @@ Migratsioon `supabase/migrations/20260807120000_initial_saarly.sql` loob kõik d
 `src/data/SupabaseRepository.ts` sisaldab Authi, mitme grupi andmete laadimise, RPC-de, Realtime'i ja Storage'i adapterit. Demorežiim kasutab sama `src/types/domain.ts` domeenimudelit, mistõttu UI ei sõltu andmebaasi teostusest. Aktiivse grupi valik salvestatakse kasutaja kaupa seadmesse ja Realtime’i tellimus vahetatakse koos grupiga.
 
 Ära pane kliendirakendusse `service_role` võtit ega kutsekoode. Kõik `EXPO_PUBLIC_` väärtused on kasutajale loetavad. `.env` on `.gitignore` failis ja rakendus kasutab ainult avalikku `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` väärtust. Kõik avalikud tabelid on RLS-iga kaitstud ning pildid on privaatses bucketis teega `group_id/item_id/file`.
+
+### Supabase'i automaatne aktiivsuspäring
+
+Fail `.github/workflows/keep-alive.yml` teeb iga kuue tunni järel väikese lugemispäringu päris andmebaasitabelile (`profiles?select=id&limit=1`). See kasutab rakenduse avalikku API-võtit ja järgib RLS-i: anonüümne päring ei näe profiiliridu ega muuda andmeid. Päringu sisu logisse ei kirjutata. Ajutisi ühendusvigu proovitakse uuesti; ebaõnnestunud päring märgib töö nurjunuks.
+
+Aktiveerimine:
+
+1. Lisa GitHubis **Settings → Secrets and variables → Actions → New repository secret** kaudu `EXPO_PUBLIC_SUPABASE_URL` ja `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, võttes väärtused kohalikust `.env` failist. Kasuta publishable- või varasemat anon-võtit, mitte `service_role`- ega secret-võtit.
+2. Saada töövoofail GitHubi `main` harusse: ajastatud töö käivitub ainult hoidla vaikeharust.
+3. Vali **Actions → Supabase keep-alive → Run workflow** ja kontrolli, et esimene käivitus õnnestub. Edasi käivitub töö iga päev kell 00:17, 06:17, 12:17 ja 18:17 UTC ka siis, kui sinu arvuti on kinni.
+
+[Supabase'i juhendi](https://supabase.com/docs/guides/platform/free-project-pausing) järgi piisab tavaliselt mõnest andmebaasipäringust päevas, kuid tasuta paketi puhul ei ole see garantii automaatse pausi vastu. Juba pausil projekti tuleb taastada Supabase'i juhtpaneelilt; päring seda automaatselt ei taasta. Tasuline pakett välistab tegevusetuse tõttu peatamise.
+
+Saarly hoidla on avalik. [GitHub keelab ajastatud tööd pärast 60 päeva ilma hoidla tegevuseta](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-workflow-runs/disabling-and-enabling-a-workflow). Vajadusel lülita töö **Actions** vaates uuesti sisse. Kui projekt jääb kuudeks arenduseta, sobib sama päringut tegev väline ajastusteenus (nt cron-job.org) paremini.
 
 ## Struktuur
 

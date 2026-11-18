@@ -81,7 +81,7 @@ interface AppContextValue {
   addItem: (listId: string, input: NewItem, photo?: NewItemPhoto) => Promise<boolean>;
   addQuickItem: (input: QuickItemInput, photo?: NewItemPhoto) => Promise<boolean>;
   increaseItemQuantity: (itemId: string, addition: number) => Promise<boolean>;
-  updateItem: (id: string, values: Partial<Pick<Item, 'name' | 'quantity' | 'unit' | 'note' | 'category_id' | 'assigned_to'>>) => void;
+  updateItem: (id: string, values: Partial<Pick<Item, 'name' | 'quantity' | 'unit' | 'note' | 'category_id' | 'assigned_to'>>) => Promise<boolean>;
   deleteItem: (id: string) => void;
   restoreItem: (id: string) => void;
   markAllRead: () => void;
@@ -646,18 +646,33 @@ export function AppProvider({ children }: React.PropsWithChildren) {
   };
   const deleteItem = (id: string) => { if (hasSupabaseConfig) void cloud.deleteItem(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => moveItemToTrash(current, id)); };
   const restoreItem = (id: string) => { if (hasSupabaseConfig) void cloud.restoreItem(id).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => restoreItemFromTrash(current, id)); };
-  const updateItem = (id: string, values: Partial<Pick<Item, 'name' | 'quantity' | 'unit' | 'note' | 'category_id' | 'assigned_to'>>) => { if (hasSupabaseConfig) { const current = state.items.find((value) => value.id === id); const assignmentChanged = Object.prototype.hasOwnProperty.call(values, 'assigned_to') && values.assigned_to !== current?.assigned_to; void cloud.updateItem(id, { ...values, ...(assignmentChanged ? { status: statusForAssignment(values.assigned_to) } : {}) }).then(() => refreshCloud()).catch((error) => show(error.message)); return; } update((current) => {
-    const previous = current.items.find((item) => item.id === id); if (!previous) return current;
-    const assignmentChanged = Object.prototype.hasOwnProperty.call(values, 'assigned_to') && values.assigned_to !== previous.assigned_to;
-    const at = now(); const nextStatus = assignmentChanged ? statusForAssignment(values.assigned_to) : previous.status;
-    const items = current.items.map((item) => item.id === id ? { ...item, ...values, status: nextStatus, updated_at: at } : item);
-    if (!assignmentChanged) return { ...current, items };
-    const releasedAssignments = current.assignments.map((assignment) => assignment.item_id === id && ['pending', 'accepted'].includes(assignment.status) ? { ...assignment, status: 'released' as const, updated_at: at } : assignment);
-    const assignment = values.assigned_to ? { id: uid('assignment'), item_id: id, user_id: values.assigned_to, assigned_by: current.currentUserId!, status: 'accepted' as const, created_at: at, updated_at: at } : null;
-    const notification = values.assigned_to && values.assigned_to !== current.currentUserId ? { id: uid('notification'), group_id: 'family', user_id: values.assigned_to, actor_id: current.currentUserId!, list_id: previous.list_id, item_id: id, type: 'item_assigned', title: 'Uus ülesanne', body: `Sulle määrati toode „${previous.name}“.`, created_at: at, updated_at: at } : null;
-    const activity = { id: uid('activity'), group_id: 'family', actor_id: current.currentUserId!, list_id: previous.list_id, item_id: id, action: values.assigned_to ? `Määras toote kasutajale ${current.profiles.find((profile) => profile.id === values.assigned_to)?.display_name ?? 'viija'}` : 'Liigutas toote jooksvasse listi', previous_status: previous.status, new_status: nextStatus, created_at: at, updated_at: at };
-    return { ...current, items, assignments: assignment ? [...releasedAssignments, assignment] : releasedAssignments, notifications: notification ? [notification, ...current.notifications] : current.notifications, activity: [...current.activity, activity] };
-  }); };
+  const updateItem = async (id: string, values: Partial<Pick<Item, 'name' | 'quantity' | 'unit' | 'note' | 'category_id' | 'assigned_to'>>) => {
+    if (hasSupabaseConfig) {
+      try {
+        const current = stateRef.current.items.find((value) => value.id === id);
+        const assignmentChanged = Object.prototype.hasOwnProperty.call(values, 'assigned_to') && (values.assigned_to ?? undefined) !== (current?.assigned_to ?? undefined);
+        await cloud.updateItem(id, { ...values, ...(assignmentChanged ? { status: statusForAssignment(values.assigned_to) } : {}) });
+        await refreshCloud();
+        return true;
+      } catch (error) {
+        show(reasonMessage(error, 'Toote muutmine ebaõnnestus.'));
+        return false;
+      }
+    }
+    update((current) => {
+      const previous = current.items.find((item) => item.id === id); if (!previous) return current;
+      const assignmentChanged = Object.prototype.hasOwnProperty.call(values, 'assigned_to') && values.assigned_to !== previous.assigned_to;
+      const at = now(); const nextStatus = assignmentChanged ? statusForAssignment(values.assigned_to) : previous.status;
+      const items = current.items.map((item) => item.id === id ? { ...item, ...values, status: nextStatus, updated_at: at } : item);
+      if (!assignmentChanged) return { ...current, items };
+      const releasedAssignments = current.assignments.map((assignment) => assignment.item_id === id && ['pending', 'accepted'].includes(assignment.status) ? { ...assignment, status: 'released' as const, updated_at: at } : assignment);
+      const assignment = values.assigned_to ? { id: uid('assignment'), item_id: id, user_id: values.assigned_to, assigned_by: current.currentUserId!, status: 'accepted' as const, created_at: at, updated_at: at } : null;
+      const notification = values.assigned_to && values.assigned_to !== current.currentUserId ? { id: uid('notification'), group_id: 'family', user_id: values.assigned_to, actor_id: current.currentUserId!, list_id: previous.list_id, item_id: id, type: 'item_assigned', title: 'Uus ülesanne', body: `Sulle määrati toode „${previous.name}“.`, created_at: at, updated_at: at } : null;
+      const activity = { id: uid('activity'), group_id: 'family', actor_id: current.currentUserId!, list_id: previous.list_id, item_id: id, action: values.assigned_to ? `Määras toote kasutajale ${current.profiles.find((profile) => profile.id === values.assigned_to)?.display_name ?? 'viija'}` : 'Liigutas toote jooksvasse listi', previous_status: previous.status, new_status: nextStatus, created_at: at, updated_at: at };
+      return { ...current, items, assignments: assignment ? [...releasedAssignments, assignment] : releasedAssignments, notifications: notification ? [notification, ...current.notifications] : current.notifications, activity: [...current.activity, activity] };
+    });
+    return true;
+  };
   const markAllRead = () => { if (hasSupabaseConfig) void cloud.markNotificationsRead(state.currentUserId!).then(() => refreshCloud()).catch((error) => show(error.message)); else update((current) => ({ ...current, notifications: current.notifications.map((value) => value.user_id === current.currentUserId ? { ...value, read_at: value.read_at ?? now() } : value) })); };
   const addNote = async (input: Pick<Note, 'title' | 'content'> & Partial<Pick<Note, 'phone' | 'url' | 'pinned'>>) => {
     if (hasSupabaseConfig) {

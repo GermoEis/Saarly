@@ -1,0 +1,41 @@
+name: Supabase keep-alive
+
+on:
+  schedule:
+    # Four database reads per day, away from the busy start of the hour (UTC).
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read from Supabase
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          : "${SUPABASE_URL:?Add the EXPO_PUBLIC_SUPABASE_URL repository secret}"
+          : "${SUPABASE_PUBLISHABLE_KEY:?Add the EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY repository secret}"
+
+          # Query a real table so the request reaches Postgres. Anonymous reads
+          # respect RLS and return no profile rows; do not use a service_role key.
+          status="$(curl \
+            --fail --silent --show-error \
+            --connect-timeout 10 --max-time 30 \
+            --retry 3 --retry-delay 5 --retry-max-time 90 \
+            --header "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+            --header 'Accept: application/json' \
+            --output /dev/null --write-out '%{http_code}' \
+            "${SUPABASE_URL%/}/rest/v1/profiles?select=id&limit=1")"
+
+          if [[ "$status" != '200' ]]; then
+            echo "::error::Supabase database read returned HTTP ${status}"
+            exit 1
+          fi
+
+          echo "Supabase database read succeeded (HTTP ${status})."
